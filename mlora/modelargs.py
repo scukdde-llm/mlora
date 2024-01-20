@@ -66,7 +66,6 @@ class MultiLoraBatchData:
     batch_tokens_: List[Tokens] = None
     attention_masks_: List[Tokens] = None
 
-    output_router_logits_: bool = False
     gradient_checkpoint_: bool = True
     inference_seq_pos_: int = -1
 
@@ -78,6 +77,7 @@ class MultiLoraBatchData:
 @dataclass
 class LoraConfig:
     adapter_name_: str = ""
+    task_type_: str = "casual"
     device_: str = "cuda:0"
     dtype_: torch.dtype = None
     lora_r_: int = None

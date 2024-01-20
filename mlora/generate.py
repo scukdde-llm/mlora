@@ -2,7 +2,6 @@ from mlora.modelargs import LoraBatchDataConfig, MultiLoraBatchData
 from mlora.tokenizer import Tokenizer, Tokens
 from mlora.prompter import Prompter
 from mlora.model import LLMModel
-from mlora.tasks import CasualLM
 
 from typing import List, Union, Tuple
 from dataclasses import dataclass
@@ -137,7 +136,6 @@ def generate(model: LLMModel,
         tokens[k, : len(t)] = torch.tensor(t, dtype=torch.int64, device=device)
 
     prev_pos = 0
-    lm_head = CasualLM(model)
     kv_cache = model.prepare_kv_cache(
         batch_size, total_len) if use_cache else None
     stop_reached = torch.tensor([False] * batch_size, device=device)
@@ -147,7 +145,7 @@ def generate(model: LLMModel,
             lora_batch_data_config_=batch_data_config,
             batch_tokens_=tokens[:, prev_pos:cur_pos].tolist(),
             inference_seq_pos_=prev_pos)
-        logits = lm_head.forward(model.forward(input_data, kv_cache)[0])
+        logits = model.forward(input_data, kv_cache)[0]
         probs = logits[:, -1]
 
         if repetition_penalty > 0:

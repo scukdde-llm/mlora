@@ -18,26 +18,14 @@ class BasicTask():
     def dataload_function(self, data_point):
         return None, None, {"bos": True, "eos": True}
 
-    def load_state_dict(self, weight: Dict[str, torch.Tensor]):
-        pass
-
-    def state_dict(self):
+    def init_kwargs(self):
         return {}
-
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        pass
-
-    def loss(self, logits: torch.Tensor, labels: List,
-             batch_tokens: List = None) -> torch.Tensor:
-        pass
 
 
 # Casual Fine-tuning Tasks
-class CasualLM(BasicTask):
-    def __init__(self, model: LLMModel, prompter: Prompter = None) -> None:
+class CasualTask(BasicTask):
+    def __init__(self, prompter: Prompter = None) -> None:
         super().__init__()
-        self.vocab_size_ = model.vocab_size_
-        self.lm_head_ = model.output_
         self.prompter_ = prompter
 
     def dataload_function(self, data_point):
@@ -47,21 +35,10 @@ class CasualLM(BasicTask):
             data_point.get("output", None))],
             None, {"bos": True, "eos": True})
 
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        return self.lm_head_(hidden_states)
-
-    def loss(self, logits: torch.Tensor, labels: List,
-             batch_tokens: List = None) -> torch.Tensor:
-        labels = torch.tensor(labels, dtype=torch.long, device=logits.device)
-        loss_fn = torch.nn.CrossEntropyLoss()
-        return loss_fn(logits[..., :-1, :].contiguous().view(-1, self.vocab_size_),
-                       labels[..., 1:].contiguous().view(-1))
-
 
 # Sequence Classification
 class SequenceClassification(BasicTask):
     def __init__(self,
-                 model: LLMModel,
                  task_type: str,
                  label_dtype: torch.dtype,
                  num_labels: int,
@@ -71,22 +48,16 @@ class SequenceClassification(BasicTask):
         self.label_dtype_ = label_dtype
         self.num_labels_ = num_labels
         self.task_type_ = task_type
-        self.pad_id_ = model.pad_token_id_
-        self.score_ = torch.nn.Linear(
-            model.dim_, self.num_labels_, bias=False, dtype=torch.float32, device=model.device_)
 
     def dataload_function(self, data_point):
         return self.dataload_function_(data_point)
 
-    def load_state_dict(self, weight: Dict[str, torch.Tensor]):
-        with torch.no_grad():
-            self.score_.weight.copy_(weight["classifier"])
-
-    def state_dict(self):
-        return {"classifier": self.score_.weight}
-
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        return self.score_(hidden_states.to(torch.float32))
+    def init_kwargs(self):
+        return {
+            "task_type": self.task_type_,
+            "num_labels": self.num_labels_,
+            "label_dtype": self.label_dtype_,
+        }
 
     def _pool_logits(self, batch_tokens: List, logits: torch.Tensor) -> torch.Tensor:
         batch_size = logits.shape[0]
@@ -113,145 +84,105 @@ class SequenceClassification(BasicTask):
             raise ValueError(f"unknown task type {self.task_type_}")
         return pooled_logits, labels.squeeze()
 
-    def loss(self, logits: torch.Tensor, labels: List,
-             batch_tokens: List = None) -> torch.Tensor:
-        labels = torch.tensor(
-            labels, dtype=self.label_dtype_, device=logits.device)
-        pooled_logits = self._pool_logits(batch_tokens, logits)
-        if self.task_type_ == "regression":
-            loss_fn = torch.nn.MSELoss()
-            if self.num_labels_ == 1:
-                return loss_fn(pooled_logits.squeeze(), labels.squeeze())
-            else:
-                return loss_fn(pooled_logits, labels)
-        elif self.task_type_ == "single_label_classification":
-            loss_fn = torch.nn.CrossEntropyLoss()
-            return loss_fn(pooled_logits.view(-1, self.num_labels_), labels.view(-1))
-        elif self.task_type_ == "multi_label_classification":
-            loss_fn = torch.nn.BCEWithLogitsLoss()
-            return loss_fn(pooled_logits, labels)
-        else:
-            raise ValueError(f"unknown task type {self.task_type_}")
 
-
-classification_task_dict = {
-    "glue:cola": {
-        "task_type": "single_label_classification",
-        "num_labels": 2,
-        "label_dtype": torch.long,
-        "dataload_function": lambda data_point: (
+classification_tasks = {
+    "glue:cola": SequenceClassification(
+        task_type="single_label_classification",
+        num_labels=2,
+        label_dtype=torch.long,
+        dataload_function=lambda data_point: (
             [data_point["sentence"]],
             [int(data_point["label"])],
             {"bos": True, "eos": True}
         ),
-    },
-    "glue:mnli": {
-        "task_type": "single_label_classification",
-        "num_labels": 3,
-        "label_dtype": torch.long,
-        "dataload_function": lambda data_point: (
+    ),
+    "glue:mnli": SequenceClassification(
+        task_type="single_label_classification",
+        num_labels=3,
+        label_dtype=torch.long,
+        dataload_function=lambda data_point: (
             [data_point["premise"], data_point["hypothesis"]],
             [int(data_point["label"])],
             {"bos": True, "eos": True},
         ),
-    },
-    "glue:mrpc": {
-        "task_type": "single_label_classification",
-        "num_labels": 2,
-        "label_dtype": torch.long,
-        "dataload_function": lambda data_point: (
+    ),
+    "glue:mrpc": SequenceClassification(
+        task_type="single_label_classification",
+        num_labels=2,
+        label_dtype=torch.long,
+        dataload_function=lambda data_point: (
             [data_point["sentence1"], data_point["sentence2"]],
             [int(data_point["label"])],
             {"bos": True, "eos": True},
         ),
-    },
-    "glue:qnli": {
-        "task_type": "single_label_classification",
-        "num_labels": 2,
-        "label_dtype": torch.long,
-        "dataload_function": lambda data_point: (
+    ),
+    "glue:qnli": SequenceClassification(
+        task_type="single_label_classification",
+        num_labels=2,
+        label_dtype=torch.long,
+        dataload_function=lambda data_point: (
             [data_point["question"], data_point["sentence"]],
             [int(data_point["label"])],
             {"bos": True, "eos": True},
         ),
-    },
-    "glue:qqp": {
-        "task_type": "single_label_classification",
-        "num_labels": 2,
-        "label_dtype": torch.long,
-        "dataload_function": lambda data_point: (
+    ),
+    "glue:qqp": SequenceClassification(
+        task_type="single_label_classification",
+        num_labels=2,
+        label_dtype=torch.long,
+        dataload_function=lambda data_point: (
             [data_point["question1"], data_point["question2"]],
             [int(data_point["label"])],
             {"bos": True, "eos": True},
         ),
-    },
-    "glue:rte": {
-        "task_type": "single_label_classification",
-        "num_labels": 2,
-        "label_dtype": torch.long,
-        "dataload_function": lambda data_point: (
+    ),
+    "glue:rte": SequenceClassification(
+        task_type="single_label_classification",
+        num_labels=2,
+        label_dtype=torch.long,
+        dataload_function=lambda data_point: (
             [data_point["sentence1"], data_point["sentence2"]],
             [int(data_point["label"])],
             {"bos": True, "eos": True},
         ),
-    },
-    "glue:sst2": {
-        "task_type": "single_label_classification",
-        "num_labels": 2,
-        "label_dtype": torch.long,
-        "dataload_function": lambda data_point: (
+    ),
+    "glue:sst2": SequenceClassification(
+        task_type="single_label_classification",
+        num_labels=2,
+        label_dtype=torch.long,
+        dataload_function=lambda data_point: (
             [data_point["sentence"]],
             [int(data_point["label"])],
             {"bos": True, "eos": True},
         ),
-    },
-    "glue:stsb": {
-        "task_type": "regression",
-        "num_labels": 1,
-        "label_dtype": torch.float,
-        "dataload_function": lambda data_point: (
+    ),
+    "glue:stsb": SequenceClassification(
+        task_type="regression",
+        num_labels=1,
+        label_dtype=torch.float,
+        dataload_function=lambda data_point: (
             [data_point["sentence1"], data_point["sentence2"]],
             [int(data_point["label"])],
             {"bos": True, "eos": True},
         ),
-    },
-    "glue:wnli": {
-        "task_type": "single_label_classification",
-        "num_labels": 2,
-        "label_dtype": torch.long,
-        "dataload_function": lambda data_point: (
+    ),
+    "glue:wnli": SequenceClassification(
+        task_type="single_label_classification",
+        num_labels=2,
+        label_dtype=torch.long,
+        dataload_function=lambda data_point: (
             data_point["sentence1"] + " </s> " + data_point["sentence2"],
             [int(data_point["label"])],
             {"bos": True, "eos": True},
         ),
-    },
+    ),
 }
-
-
-def train_task_factory(model: LLMModel, train_config: Dict[str, any], weight: Dict[str, torch.Tensor]) -> BasicTask:
-    task_type = train_config.get("task_type", "casual")
-    if task_type == "casual":
-        task = CasualLM(model, Prompter(train_config["prompt"]))
-    else:
-        task = SequenceClassification(
-            model, **classification_task_dict[task_type])
-    if weight is not None:
-        task.load_state_dict(weight)
-    return task
-
-
-def classification_task_factory(model: LLMModel, task_type: str, weight: Dict[str, torch.Tensor]) -> SequenceClassification:
-    task = SequenceClassification(model, **classification_task_dict[task_type])
-    if weight is not None:
-        task.load_state_dict(weight)
-    return task
 
 
 @dataclass
 class EvaluateConfig:
     adapter_name_: str = None
     task_type_: str = None
-    task_: SequenceClassification = None
     batch_size_: int = 16,
     batch_seq_len_: int = 512
     # Do not set these manually

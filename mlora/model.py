@@ -3,8 +3,9 @@ from mlora.modelargs import KVCache, LoraConfig, MultiLoraBatchData
 import torch
 import einops
 
+from dataclasses import dataclass
 from abc import ABCMeta, abstractclassmethod
-from typing import Tuple, Dict, List, Optional
+from typing import Tuple, Dict, List, Optional, Callable
 
 
 def precompute_mask(tokens: torch.Tensor,
@@ -101,6 +102,29 @@ class RMSNorm(torch.nn.Module):
         return (self.weight_ * data).to(input_dtype)
 
 
+@dataclass
+class ModelOutput:
+    adapter_name: str = None
+    logits: torch.Tensor = None
+    loss: torch.Tensor = None
+    # for internal use
+    loss_fn_: Callable = None
+
+
+class LLMOutput(metaclass=ABCMeta):
+    def forward(self, data: torch.Tensor) -> torch.Tensor:
+        pass
+
+    def loss(self,
+             input_ids: torch.Tensor,
+             output_logits: torch.Tensor,
+             labels: List[List[int]]) -> torch.Tensor:
+        pass
+
+    def state_dict(self):
+        return {}
+
+
 class LLMModel(metaclass=ABCMeta):
     @abstractclassmethod
     def init_lora_layer_weight(self, config: LoraConfig, weight: Optional[Dict[str, torch.Tensor]]):
@@ -132,5 +156,6 @@ class LLMModel(metaclass=ABCMeta):
 
     @abstractclassmethod
     def forward(self, input: MultiLoraBatchData,
+                labels: List[List[int]] = None,
                 kv_cache: KVCache = None) -> torch.Tensor:
         pass
