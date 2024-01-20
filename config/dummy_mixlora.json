@@ -55,7 +55,7 @@
                 "w3_proj": true
             },
             "routing_strategy": "switch",
-            "expert_capacity": 32,
+            "expert_capacity": 1536,
             "num_experts": 8,
             "act_fn": "gelu_new",
             "data": "data/dummy_data.json",
