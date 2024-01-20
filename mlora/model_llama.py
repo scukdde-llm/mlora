@@ -1,12 +1,12 @@
+from mlora.modelargs import KVCache, LLMModelArgs, LLMModelOutput, MultiLoraBatchData
 from mlora.modelargs import LoraConfig, MixConfig, lora_config_factory
-from mlora.modelargs import KVCache, LLMModelArgs, MultiLoraBatchData
 from mlora.checkpoint import CheckpointRecomputeFunction
 from mlora.model import repeat_kv, apply_rotary_emb, precompute_rope_angle, precompute_mask
-from mlora.model import LLMModel, LLMOutput, RMSNorm, ModelOutput
-from mlora.generate import GenerateConfig
+from mlora.model import LLMModel, LLMOutput, RMSNorm
 from mlora.feed_forward import FeedForward
-from mlora.mix_lora import router_loss_factory
 from mlora.lora_liner import Linear
+from mlora.generate import GenerateConfig
+from mlora.mix_lora import router_loss_factory
 from mlora.tasks import classification_tasks
 
 import torch
@@ -136,7 +136,7 @@ class OutputLayer(torch.nn.Module):
         self.layers_: torch.ModuleDict = {}
 
     def forward(self, data: torch.Tensor,
-                input_args: MultiLoraBatchData) -> List[ModelOutput]:
+                input_args: MultiLoraBatchData) -> List[LLMModelOutput]:
         outputs = []
         for lora_config in input_args.lora_batch_data_config_:
             adapter_name = lora_config.adapter_name_
@@ -145,10 +145,10 @@ class OutputLayer(torch.nn.Module):
 
             assert adapter_name != "" and adapter_name in self.layers_
             layer = self.layers_[adapter_name]
-            outputs.append(ModelOutput(adapter_name=adapter_name,
-                                       logits=layer.forward(
-                                           data[start_idx:end_idx]),
-                                       loss_fn_=layer.loss))
+            outputs.append(LLMModelOutput(adapter_name=adapter_name,
+                                          logits=layer.forward(
+                                              data[start_idx:end_idx]),
+                                          loss_fn_=layer.loss))
 
         return outputs
 
@@ -358,7 +358,7 @@ class LlamaModel(LLMModel):
     # train model or inference model: output is probs
     def forward(self, input: MultiLoraBatchData,
                 labels: List[List[int]] = None,
-                kv_cache: KVCache = None) -> torch.Tensor:
+                kv_cache: KVCache = None) -> List[LLMModelOutput]:
         tokens = torch.tensor(input.batch_tokens_,
                               dtype=torch.long, device=self.device_)
 
@@ -386,10 +386,12 @@ class LlamaModel(LLMModel):
         output = data[0]
         assert isinstance(output, List)
         for idx, lora_config in enumerate(input.lora_batch_data_config_):
+            output_data = output[idx]
+            assert isinstance(output_data, LLMModelOutput)
             start_idx = lora_config.batch_start_idx_
             end_idx = lora_config.batch_end_idx_
-            output_data = output[idx]
-            assert isinstance(output_data, ModelOutput)
+            output_data.batch_start_idx_ = start_idx
+            output_data.batch_end_idx_ = end_idx
             if labels is None:
                 continue
             # compute loss when labels provided

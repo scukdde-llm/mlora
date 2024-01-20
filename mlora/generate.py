@@ -145,42 +145,48 @@ def generate(model: LLMModel,
             lora_batch_data_config_=batch_data_config,
             batch_tokens_=tokens[:, prev_pos:cur_pos].tolist(),
             inference_seq_pos_=prev_pos)
-        logits = model.forward(input_data, kv_cache)[0]
-        probs = logits[:, -1]
+        outputs = model.forward(input_data, kv_cache=kv_cache)
+        for output in outputs:
+            start_idx = output.batch_start_idx_
+            end_idx = output.batch_end_idx_
+            probs = output.logits[:, -1]
 
-        if repetition_penalty > 0:
-            probs = _logits_repetition_penalty(
-                tokens[:, :cur_pos], probs, repetition_penalty)
+            if repetition_penalty > 0:
+                probs = _logits_repetition_penalty(
+                    tokens[start_idx:end_idx, :cur_pos], probs, repetition_penalty)
 
-        if process_conditions and renormalize_logits:
-            probs = probs.log_softmax(-1)
+            if process_conditions and renormalize_logits:
+                probs = probs.log_softmax(-1)
 
-        if temperature > 0:
-            probs = probs / temperature
+            if temperature > 0:
+                probs = probs / temperature
 
-        if top_k > 0:
-            probs = _logits_sample_top_k(probs, top_k)
+            if top_k > 0:
+                probs = _logits_sample_top_k(probs, top_k)
 
-        if top_p > 0 and top_p <= 1.0:
-            probs = _logits_sample_top_p(probs, top_p)
+            if top_p > 0 and top_p <= 1.0:
+                probs = _logits_sample_top_p(probs, top_p)
 
-        if sample_conditions and renormalize_logits:
-            probs = probs.log_softmax(-1)
+            if sample_conditions and renormalize_logits:
+                probs = probs.log_softmax(-1)
 
-        if do_sample:
-            probs = torch.softmax(probs, dim=-1)
-            next_token = torch.multinomial(probs, num_samples=1).squeeze(1)
-        else:
-            next_token = torch.argmax(probs, dim=-1)
+            if do_sample:
+                probs = torch.softmax(probs, dim=-1)
+                next_token = torch.multinomial(probs, num_samples=1).squeeze(1)
+            else:
+                next_token = torch.argmax(probs, dim=-1)
 
-        next_token = next_token.reshape(-1)
-        next_token = torch.where(
-            input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token
-        )
-        tokens[:, cur_pos] = next_token
+            next_token = next_token.reshape(-1)
+            next_token = torch.where(
+                input_text_mask[start_idx:end_idx,
+                                cur_pos], tokens[start_idx:end_idx, cur_pos], next_token
+            )
+            tokens[start_idx:end_idx, cur_pos] = next_token
+
         if stream_callback is not None:
             stream_callback(cur_pos, gen_outputs(
                 configs, tokenizer, raw_prompts, tokens, max_gen_len))
+
         stop_reached |= (~input_text_mask[:, cur_pos]) & (
             next_token == tokenizer.eos_id_)
         if kv_cache is not None:

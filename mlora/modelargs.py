@@ -1,5 +1,5 @@
 from transformers.activations import ACT2FN
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Callable
 from dataclasses import dataclass
 
 import torch
@@ -30,6 +30,17 @@ class LLMModelArgs:
     max_seq_len_: int = 2048
     device_: str = ""
     dtype_: torch.dtype = None
+
+
+@dataclass
+class LLMModelOutput:
+    adapter_name: str = None
+    logits: torch.Tensor = None
+    loss: torch.Tensor = None
+    # for internal use
+    batch_start_idx_: int = -1
+    batch_end_idx_: int = -1
+    loss_fn_: Callable = None
 
 
 @dataclass
