@@ -3,7 +3,7 @@ from mlora.tokenizer import Tokenizer
 from mlora.prompter import Prompter
 from mlora.model import LLMModel
 
-from typing import List, Dict, Tuple, Callable
+from typing import List, Tuple, Callable
 from dataclasses import dataclass
 import datasets as hf_datasets
 import evaluate as hf_evaluate
@@ -183,15 +183,16 @@ classification_tasks = {
 class EvaluateConfig:
     adapter_name_: str = None
     task_type_: str = None
-    batch_size_: int = 16,
-    batch_seq_len_: int = 512
+    batch_size_: int = 16
     # Do not set these manually
+    task_: SequenceClassification = None
     data_: hf_datasets.Dataset = None
     metric_: hf_evaluate.EvaluationModule = None
     batch_start_idx_: int = 0
     batch_end_idx_: int = 0
 
     def init_task(self):
+        self.task_ = classification_tasks[self.task_type_]
         if ':' in self.task_type_:
             result = self.task_type_.split(':')
             self.data_ = hf_datasets.load_dataset(
@@ -203,7 +204,48 @@ class EvaluateConfig:
             self.metric_ = hf_evaluate.load(self.task_type_)
 
     def dataload(self, data_point):
-        return self.task_.dataload_function(data_point)
+        return self.task_.dataload_function_(data_point)
+
+
+def _dispatch_task_in(tokenizer: Tokenizer, configs: List[EvaluateConfig], max_seq_len: int):
+    batch_data_config = []
+    current_configs = []
+    batch_tokens = []
+    batch_labels = []
+    atten_masks = []
+    for config in configs:
+        if config.batch_start_idx_ >= len(config.data_):
+            continue
+        config.batch_end_idx_ = min(
+            config.batch_start_idx_ + config.batch_size_, len(config.data_))
+        batch_start_idx = len(batch_tokens)
+        for idx in range(config.batch_start_idx_, config.batch_end_idx_):
+            if idx >= len(config.data_):
+                break
+            texts, labels, kwargs = config.dataload(config.data_[idx])
+            tokens = []
+            for text in texts:
+                tokens.extend(tokenizer.encode(data=text, **kwargs))
+            if len(tokens) > max_seq_len:
+                tokens = tokens[:max_seq_len]
+            while len(tokens) < max_seq_len:
+                tokens.append(tokenizer.pad_id_)
+            batch_tokens.append(tokens)
+            atten_masks.append(tokenizer.attention_mask(tokens))
+            batch_labels.append(labels.copy())
+
+        config.batch_start_idx_ = config.batch_end_idx_
+        current_configs.append(config)
+        batch_data_config.append(LoraBatchDataConfig(adapter_name_=config.adapter_name_,
+                                                     batch_start_idx_=batch_start_idx, batch_end_idx_=len(batch_tokens)))
+
+    return (current_configs,
+            batch_labels,
+            MultiLoraBatchData(
+                lora_batch_data_config_=batch_data_config,
+                batch_tokens_=batch_tokens,
+                attention_masks_=atten_masks,
+                gradient_checkpoint_=False))
 
 
 @torch.inference_mode()
@@ -218,61 +260,45 @@ def evaluate(model: LLMModel,
             max_iterations = len(config.data_)
 
     while True:
-        batch_data_config = []
-        current_configs = []
-        batch_tokens = []
-        atten_masks = []
-        batch_labels = []
-        for config in configs:
-            if config.batch_start_idx_ >= len(config.data_):
-                continue
-            config.batch_end_idx_ = min(
-                config.batch_start_idx_ + config.batch_size_, len(config.data_))
-            batch_start_idx = len(batch_tokens)
-            for idx in range(config.batch_start_idx_, config.batch_end_idx_):
-                if idx >= len(config.data_):
-                    break
-                texts, labels, kwargs = config.dataload(config.data_[idx])
-                tokens = []
-                for text in texts:
-                    tokens.extend(tokenizer.encode(data=text, **kwargs))
-                if len(tokens) > max_seq_len:
-                    tokens = tokens[:max_seq_len]
-                while len(tokens) < max_seq_len:
-                    tokens.append(tokenizer.pad_id_)
-                batch_tokens.append(tokens)
-                atten_masks.append(tokenizer.attention_mask(tokens))
-                batch_labels.append(labels.copy())
-
-            config.batch_start_idx_ = config.batch_end_idx_
-            current_configs.append(config)
-            batch_data_config.append(LoraBatchDataConfig(adapter_name_=config.adapter_name_,
-                                     batch_start_idx_=batch_start_idx, batch_end_idx_=len(batch_tokens)))
+        current_configs, batch_labels, input_args = _dispatch_task_in(
+            tokenizer, configs, max_seq_len)
 
         if len(current_configs) == 0:
             break
 
-        input_data = MultiLoraBatchData(
-            lora_batch_data_config_=batch_data_config,
-            batch_tokens_=batch_tokens,
-            attention_masks_=atten_masks,
-            gradient_checkpoint_=False)
+        outputs = model.forward(input_args)
 
-        outputs = model.forward(input_data)[0]
+        input_ids = torch.tensor(input_args.batch_tokens_, dtype=torch.long)
 
-        for idx, config in enumerate(batch_data_config):
-            task_config = current_configs[idx]
-            task = task_config.task_
-            metric = task_config.metric_
-            start_idx = config.batch_start_idx_
-            end_idx = config.batch_end_idx_
-            logits = task.forward(outputs[start_idx:end_idx])
-            predictions, references = task.evaluate(
-                logits, batch_labels[start_idx:end_idx], batch_tokens[start_idx:end_idx])
-            metric.add_batch(predictions=predictions, references=references)
+        for idx, output in enumerate(outputs):
+            config: EvaluateConfig = current_configs[idx]
+            task: SequenceClassification = config.task_
+            metric = config.metric_
+            start_idx = output.batch_start_idx_
+            end_idx = output.batch_end_idx_
+            logits = output.logits
+
+            batch_size = logits.shape[0]
+            sequence_lengths = (torch.eq(input_ids[start_idx:end_idx],
+                                         tokenizer.pad_id_).int().argmax(-1) - 1).to(logits.device)
+            pooled_logits = logits[torch.arange(batch_size,
+                                                device=logits.device), sequence_lengths]
+            labels = torch.tensor(batch_labels[start_idx:end_idx],
+                                  dtype=task.label_dtype_, device=logits.device)
+            if task.task_type_ == "regression":
+                if task.num_labels_ == 1:
+                    pooled_logits = pooled_logits[:, 0]
+            elif task.task_type_ == "single_label_classification":
+                pooled_logits = torch.argmax(
+                    pooled_logits, dim=-1).to(task.label_dtype_)
+            elif task.task_type_ != "multi_label_classification":
+                raise ValueError(f"unknown task type {task.task_type_}")
+
+            metric.add_batch(predictions=pooled_logits.detach().cpu(),
+                             references=labels.squeeze().detach().cpu())
             logging.info(f"{config.adapter_name_} evaluate data:")
             logging.info(
-                f"    step: {task_config.batch_start_idx_}/{len(task_config.data_)}")
+                f"    step: {config.batch_start_idx_}/{len(config.data_)}")
 
     for config in configs:
         logging.info(f"{config.adapter_name_} evaluate result:")

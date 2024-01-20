@@ -124,9 +124,8 @@ def init_adapter_config(config: Dict[str, any],
                 config_class.prompt_template_ = lora_config["prompt"]
         elif args.evaluate:
             config_class = mlora.EvaluateConfig(
-                adapter_name_=config_class.adapter_name_, task_type_=lora_config["task_type"],
-                task_=mlora.classification_task_factory(
-                    model, lora_config["task_type"], lora_weight),
+                adapter_name_=config_class.adapter_name_,
+                task_type_=config_class.task_type_,
                 batch_size_=lora_config["micro_batch_size"])
         else:
             config_class = mlora.TrainConfig(lora_config, config_class)
