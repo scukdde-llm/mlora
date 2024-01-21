@@ -94,6 +94,7 @@ class TrainTask():
                       data: List,
                       is_train_data: bool = True) -> List[TrainData]:
         ret: List[TrainData] = []
+        max_train_tokens_len = 0
         for idx, data_point in enumerate(data):
             inputs, labels, flags = self.dataload_function_(data_point)
             assert isinstance(inputs, List)
@@ -102,6 +103,7 @@ class TrainTask():
                 tokens = []
                 for text in inputs:
                     tokens.extend(self.tokenizer_.encode(text, **flags))
+                max_train_tokens_len = max(max_train_tokens_len, len(tokens))
                 if len(tokens) > self.train_cutoff_len_:
                     tokens = tokens[:self.train_cutoff_len_]
             else:
@@ -113,6 +115,10 @@ class TrainTask():
             if idx % 10000 == 0:
                 logging.info(
                     f"Encode text data {self.adapter_name_}: {idx}/{len(data)}")
+
+        if is_train_data:
+            logging.info(
+                f"Max train tokens length: {max_train_tokens_len}/{self.train_cutoff_len_}")
 
         if is_train_data and self.group_by_length_:
             ret.sort(key=lambda x: len(x.tokens_), reverse=True)

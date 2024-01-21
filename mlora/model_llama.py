@@ -100,8 +100,7 @@ class ClassificationOutputLayer(LLMOutput):
         return {"classifier": self.score_.weight}
 
     def forward(self, data: torch.Tensor) -> torch.Tensor:
-        data_ = self.score_(data.to(torch.float32))
-        return data_.to(data.dtype)
+        return self.score_(data.to(torch.float32))
 
     def loss(self,
              input_ids: torch.Tensor,
