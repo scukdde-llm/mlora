@@ -109,12 +109,6 @@ def train(dispatcher: Dispatcher,
     while not dispatcher.check_task_done():
         labels, input = dispatcher.get_train_data()
 
-        for task in dispatcher.running_train_task_:
-            config = config_dict[task.adapter_name_]
-            config.step_lr_scheduler(
-                task.total_epoch_num_, len(task.train_token_data_))
-            config.optimizer_.zero_grad()
-
         step_cnt += 1
 
         outputs = model.forward(input, labels)
@@ -133,9 +127,12 @@ def train(dispatcher: Dispatcher,
         total_loss.backward()
         for task in dispatcher.running_train_task_:
             config = config_dict[task.adapter_name_]
+            config.step_lr_scheduler(
+                task.total_epoch_num_, len(task.train_token_data_))
             if step_cnt % config.accumulation_step_ == 0:
                 config.optimizer_.step()
                 config.lr_scheduler_.step()
+                config.optimizer_.zero_grad()
 
             if step_cnt % save_step == 0:
                 save_adapter_weight(model, config, save_dir, f"{step_cnt}")
