@@ -279,7 +279,7 @@ def evaluate(model: LLMModel,
             logits = output.logits
 
             batch_size = logits.shape[0]
-            sequence_lengths = (torch.eq(input_ids[start_idx:end_idx],
+            sequence_lengths = (torch.eq(input_ids[start_idx:end_idx, 1:],
                                          tokenizer.pad_id_).int().argmax(-1) - 1).to(logits.device)
             pooled_logits = logits[torch.arange(batch_size,
                                                 device=logits.device), sequence_lengths]

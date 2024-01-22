@@ -56,14 +56,13 @@ class RMSNormLayer(torch.nn.Module):
 
 
 class CasualOutputLayer(LLMOutput):
-    def __init__(self, vocab_size: int, weight: torch.Tensor):
+    def __init__(self, vocab_size: int, weight: torch.nn.Linear):
         super().__init__()
         self.vocab_size_: int = vocab_size
-        self.weight_: torch.Tensor = weight
+        self.lm_head_: torch.nn.Linear = weight
 
     def forward(self, data: torch.Tensor) -> torch.Tensor:
-        data_ = data.to(self.weight_.dtype) @ self.weight_.transpose(0, 1)
-        return data_.to(data.dtype)
+        return self.lm_head_(data.to(torch.float32))
 
     def loss(self,
              input_ids: torch.Tensor,
@@ -92,7 +91,10 @@ class ClassificationOutputLayer(LLMOutput):
         self.pad_id_ = pad_token_id
         self.score_ = torch.nn.Linear(
             hidden_size, self.num_labels_, bias=False, dtype=torch.float32, device=device)
-        if weight is not None:
+        if weight is None:
+            torch.nn.init.kaiming_normal_(
+                self.score_.weight, a=math.sqrt(5))
+        else:
             with torch.no_grad():
                 self.score_.weight.copy_(weight["classifier"])
 
@@ -333,7 +335,8 @@ class LlamaModel(LLMModel):
             self.layers_.append(Transformer(layer_id, args))
 
         self.norm_: RMSNormLayer = None    # dim
-        self.lm_head_: torch.Tensor = None   # vocab size * dim
+        self.lm_head_ = torch.nn.Linear(
+            args.dim_, args.vocab_size_, bias=False, device=args.device_, dtype=torch.float32)
         self.output_: OutputLayer = OutputLayer()
 
         # cos and sin
@@ -501,8 +504,9 @@ class LlamaModel(LLMModel):
         model.token_embedding_ = Embedding(
             embedding_weight, llama_args.pad_token_id_)
 
-        model.lm_head_ = llama_model.lm_head.weight.to(
-            dtype=torch.float32, device=device).detach()
+        with torch.no_grad():
+            model.lm_head_.weight.copy_(llama_model.lm_head.weight)
+        model.lm_head_.requires_grad_(False)
 
         norm_weight = llama_model.model.norm.weight.to(
             device=device).detach()

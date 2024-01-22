@@ -4,7 +4,7 @@ from mlora.tasks import CasualTask, classification_tasks
 from mlora.prompter import Prompter
 from mlora.model import LLMModel
 
-from transformers import get_linear_schedule_with_warmup
+from transformers import get_scheduler
 from typing import Dict, List, Union
 import logging
 import torch
@@ -23,6 +23,11 @@ class TrainConfig:
         self.learning_rate_ = train_config["lr"]
         self.momentum_ = train_config.get("momentum", 0)
         self.weight_decay_ = train_config.get("weight_decay", 0.01)
+        # Scheduler Types
+        #   linear, cosine, cosine_with_restarts, polynomial, constant
+        #   constant_with_warmup, inverse_sqrt, reduce_lr_on_plateau
+        self.scheduler_type_: str = train_config.get(
+            "scheduler_type", "linear")
         self.warmup_steps_: Union[int, float] = train_config.get(
             "warmup_steps", 0)
         self.all_training_steps_: int = -1
@@ -64,8 +69,8 @@ class TrainConfig:
             warmup_steps = self.warmup_steps_ * \
                 total_steps if isinstance(
                     self.warmup_steps_, float) else self.warmup_steps_
-            self.lr_scheduler_ = get_linear_schedule_with_warmup(
-                self.optimizer_, warmup_steps, total_steps)
+            self.lr_scheduler_ = get_scheduler(
+                self.scheduler_type_, self.optimizer_, warmup_steps, total_steps)
 
 
 def save_adapter_weight(model: LLMModel, config: TrainConfig, path: str, dir_suffix=""):
