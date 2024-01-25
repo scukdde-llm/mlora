@@ -1,4 +1,0 @@
-{
-    "description": "MMLU us foreign policy",
-    "prompt_input": "The following are multiple choice questions (with answers) about us foreign policy.\n\nQuestion: {instruction}\n{input}Answer: "
-}
