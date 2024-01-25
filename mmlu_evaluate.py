@@ -72,7 +72,7 @@ def prepare_data(tokenizer: mlora.Tokenizer,
     logging.info(f"Max sequence length: {max_seq_len}")
 
     for tokens in batch_tokens:
-        sequence_lengths.append(len(tokens))
+        sequence_lengths.append(len(tokens) - 1)
         while len(tokens) < max_seq_len:
             tokens.append(tokenizer.pad_id_)
         atten_masks.append(tokenizer.attention_mask(tokens))
@@ -125,7 +125,6 @@ def evaluate(category: str,
         end_pos = min(len(batch_tokens), start_pos + batch_size)
         logging.info(f"evaluation step: {start_pos}/{len(batch_tokens)}")
         bsz = end_pos - start_pos
-        torch.cuda.empty_cache()
         batch_data_config = []
         batch_start_idx = 0
         for name in adapter_names:
