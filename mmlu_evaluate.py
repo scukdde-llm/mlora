@@ -62,7 +62,6 @@ def prepare_data(tokenizer: mlora.Tokenizer,
             if k <= 0:
                 break
 
-        print(dev_prompt + test_prompt)
         max_tokens_len = max(len(tokens), max_tokens_len)
         batch_tokens.append(tokens)
         batch_labels.append(test_data_point["answer"])
