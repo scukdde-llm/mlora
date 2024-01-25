@@ -4,6 +4,7 @@ import mlora
 import torch
 import math
 import fire
+import csv
 
 from typing import List
 
@@ -82,12 +83,12 @@ def prepare_data(tokenizer: mlora.Tokenizer,
 
 @torch.inference_mode()
 def evaluate(category: str,
-             model_name: str,
+             tokenizer: mlora.Tokenizer,
+             model: mlora.LlamaModel,
              adapter_names: List[str],
              batch_size: int = 2,
              device: str = "cuda:0"):
     # prepare data
-    tokenizer = mlora.Tokenizer(model_name)
 
     mmlu = datasets.load_dataset("cais/mmlu", category)
 
@@ -95,19 +96,11 @@ def evaluate(category: str,
         tokenizer, category, mmlu["dev"], mmlu["test"], 5, 2048)
 
     # load adapters
-    model = mlora.LlamaModel.from_pretrained(
-        path=model_name,
-        device=device,
-        bits=None,
-        load_dtype=torch.bfloat16
-    )
 
     results = {}
 
     for name in adapter_names:
-        logging.info(f"Loading adapter {name}")
         results[name] = []
-        model.load_adapter_weight(name)
 
     # prepare for evaluate
     sequence_lengths = torch.tensor(
@@ -163,6 +156,92 @@ def evaluate(category: str,
 
         start_pos = end_pos
 
+    return results
+
+
+mmlu_subjects = [
+    "abstract_algebra",
+    "anatomy",
+    "astronomy",
+    "business_ethics",
+    "clinical_knowledge",
+    "college_biology",
+    "college_chemistry",
+    "college_computer_science",
+    "college_mathematics",
+    "college_medicine",
+    "college_physics",
+    "computer_security",
+    "conceptual_physics",
+    "econometrics",
+    "electrical_engineering",
+    "elementary_mathematics",
+    "formal_logic",
+    "global_facts",
+    "high_school_biology",
+    "high_school_chemistry",
+    "high_school_computer_science",
+    "high_school_european_history",
+    "high_school_geography",
+    "high_school_government_and_politics",
+    "high_school_macroeconomics",
+    "high_school_mathematics",
+    "high_school_microeconomics",
+    "high_school_physics",
+    "high_school_psychology",
+    "high_school_statistics",
+    "high_school_us_history",
+    "high_school_world_history",
+    "human_aging",
+    "human_sexuality",
+    "international_law",
+    "jurisprudence",
+    "logical_fallacies",
+    "machine_learning",
+    "management",
+    "marketing",
+    "medical_genetics",
+    "miscellaneous",
+    "moral_disputes",
+    "moral_scenarios",
+    "nutrition",
+    "philosophy",
+    "prehistory",
+    "professional_accounting",
+    "professional_law",
+    "professional_medicine",
+    "professional_psychology",
+    "public_relations",
+    "security_studies",
+    "sociology",
+    "us_foreign_policy",
+    "virology",
+    "world_religions",
+]
+
+
+def do_evaluate(model_name: str,
+                adapter_names: List[str],
+                device: str = "cuda:0",
+                output: str = "mmlu_scores.csv"):
+    tokenizer = mlora.Tokenizer(model_name)
+    model = mlora.LlamaModel.from_pretrained(
+        model_name, device=device, load_dtype=torch.bfloat16)
+    for name in adapter_names:
+        logging.info(f"Loading adapter {name}")
+        model.load_adapter_weight(name)
+
+    csv_data = [["mmlu_subject", "adapter_name", "acc_score"]]
+    for subject in mmlu_subjects:
+        logging.info(f"Performing MMLU/{subject} Benchmark")
+        results = evaluate(subject, tokenizer, model, adapter_names, 2, device)
+        for name, result in results.items():
+            acc = sum(result)/len(result)
+            csv_data.append([subject, name, acc])
+        with open(output, "w", newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerows(csv_data)
+
 
 log_handlers = [logging.StreamHandler()]
 logging.basicConfig(format='[%(asctime)s] m-LoRA: %(message)s',
@@ -171,5 +250,5 @@ logging.basicConfig(format='[%(asctime)s] m-LoRA: %(message)s',
                     force=True)
 
 if __name__ == "__main__":
-    fire.Fire(lambda category, model_name: evaluate(
-        category, model_name, ["alpaca-lora-7b", "mixlora-7b"]))
+    fire.Fire(lambda model_name, device="cuda:0", output="mmlu_scores.csv": do_evaluate(
+        model_name, ["alpaca-lora-7b", "mixlora-7b"], device, output))
