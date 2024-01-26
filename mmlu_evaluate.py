@@ -88,8 +88,7 @@ def evaluate(category: str,
              tokenizer: mlora.Tokenizer,
              model: mlora.LlamaModel,
              adapter_names: List[str],
-             batch_size: int = 2,
-             device: str = "cuda:0"):
+             batch_size: int = 2):
     # prepare data
 
     mmlu = datasets.load_dataset("cais/mmlu", category)
@@ -135,7 +134,6 @@ def evaluate(category: str,
             batch_tokens_=batch_tokens[start_pos:end_pos]*len(adapter_names),
             attention_masks_=atten_masks[start_pos:end_pos]*len(adapter_names),
             gradient_checkpoint_=False,
-            inference_seq_pos_=0,
         )
 
         outputs = model.forward(input_args)
@@ -161,65 +159,73 @@ def evaluate(category: str,
     return results
 
 
-mmlu_subjects = [
-    "abstract_algebra",
-    "anatomy",
-    "astronomy",
-    "business_ethics",
-    "clinical_knowledge",
-    "college_biology",
-    "college_chemistry",
-    "college_computer_science",
-    "college_mathematics",
-    "college_medicine",
-    "college_physics",
-    "computer_security",
-    "conceptual_physics",
-    "econometrics",
-    "electrical_engineering",
-    "elementary_mathematics",
-    "formal_logic",
-    "global_facts",
-    "high_school_biology",
-    "high_school_chemistry",
-    "high_school_computer_science",
-    "high_school_european_history",
-    "high_school_geography",
-    "high_school_government_and_politics",
-    "high_school_macroeconomics",
-    "high_school_mathematics",
-    "high_school_microeconomics",
-    "high_school_physics",
-    "high_school_psychology",
-    "high_school_statistics",
-    "high_school_us_history",
-    "high_school_world_history",
-    "human_aging",
-    "human_sexuality",
-    "international_law",
-    "jurisprudence",
-    "logical_fallacies",
-    "machine_learning",
-    "management",
-    "marketing",
-    "medical_genetics",
-    "miscellaneous",
-    "moral_disputes",
-    "moral_scenarios",
-    "nutrition",
-    "philosophy",
-    "prehistory",
-    "professional_accounting",
-    "professional_law",
-    "professional_medicine",
-    "professional_psychology",
-    "public_relations",
-    "security_studies",
-    "sociology",
-    "us_foreign_policy",
-    "virology",
-    "world_religions",
-]
+mmlu_subcategories = {
+    "abstract_algebra": ["math"],
+    "anatomy": ["health"],
+    "astronomy": ["physics"],
+    "business_ethics": ["business"],
+    "clinical_knowledge": ["health"],
+    "college_biology": ["biology"],
+    "college_chemistry": ["chemistry"],
+    "college_computer_science": ["computer science"],
+    "college_mathematics": ["math"],
+    "college_medicine": ["health"],
+    "college_physics": ["physics"],
+    "computer_security": ["computer science"],
+    "conceptual_physics": ["physics"],
+    "econometrics": ["economics"],
+    "electrical_engineering": ["engineering"],
+    "elementary_mathematics": ["math"],
+    "formal_logic": ["philosophy"],
+    "global_facts": ["other"],
+    "high_school_biology": ["biology"],
+    "high_school_chemistry": ["chemistry"],
+    "high_school_computer_science": ["computer science"],
+    "high_school_european_history": ["history"],
+    "high_school_geography": ["geography"],
+    "high_school_government_and_politics": ["politics"],
+    "high_school_macroeconomics": ["economics"],
+    "high_school_mathematics": ["math"],
+    "high_school_microeconomics": ["economics"],
+    "high_school_physics": ["physics"],
+    "high_school_psychology": ["psychology"],
+    "high_school_statistics": ["math"],
+    "high_school_us_history": ["history"],
+    "high_school_world_history": ["history"],
+    "human_aging": ["health"],
+    "human_sexuality": ["culture"],
+    "international_law": ["law"],
+    "jurisprudence": ["law"],
+    "logical_fallacies": ["philosophy"],
+    "machine_learning": ["computer science"],
+    "management": ["business"],
+    "marketing": ["business"],
+    "medical_genetics": ["health"],
+    "miscellaneous": ["other"],
+    "moral_disputes": ["philosophy"],
+    "moral_scenarios": ["philosophy"],
+    "nutrition": ["health"],
+    "philosophy": ["philosophy"],
+    "prehistory": ["history"],
+    "professional_accounting": ["other"],
+    "professional_law": ["law"],
+    "professional_medicine": ["health"],
+    "professional_psychology": ["psychology"],
+    "public_relations": ["politics"],
+    "security_studies": ["politics"],
+    "sociology": ["culture"],
+    "us_foreign_policy": ["politics"],
+    "virology": ["health"],
+    "world_religions": ["philosophy"],
+}
+
+
+mmlu_categories = {
+    "STEM": ["physics", "chemistry", "biology", "computer science", "math", "engineering"],
+    "humanities": ["history", "philosophy", "law"],
+    "social sciences": ["politics", "culture", "economics", "geography", "psychology"],
+    "other (business, health, misc.)": ["other", "business", "health"],
+}
 
 
 model_dtypes = {
@@ -242,14 +248,19 @@ def do_evaluate(model_name: str,
         logging.info(f"Loading adapter {name}")
         model.load_adapter_weight(name)
 
-    csv_data = [["mmlu_subject", "adapter_name", "acc_score"]]
-    for subject in mmlu_subjects:
+    csv_data = [["mmlu_categories", "mmlu_subcategories",
+                 "adapter_name", "acc_score"]]
+    for subject, subcategory in mmlu_subcategories.items():
         logging.info(f"Performing MMLU/{subject} Benchmark")
         results = evaluate(subject, tokenizer, model,
-                           adapter_names, batch_size, device)
+                           adapter_names, batch_size)
+        category = None
+        for category_name, subcategory_names in mmlu_categories.items():
+            if subcategory[-1] in subcategory_names:
+                category = category_name
         for name, result in results.items():
             acc = sum(result)/len(result)
-            csv_data.append([subject, name, acc])
+            csv_data.append([category, subject, name, acc])
         with open(output, "w", newline='') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerows(csv_data)
