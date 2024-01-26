@@ -1,7 +1,9 @@
 import datasets
 import logging
+import random
 import mlora
 import torch
+import json
 import math
 import fire
 import csv
@@ -220,13 +222,22 @@ mmlu_subjects = [
 ]
 
 
+model_dtypes = {
+    "4bit": {"bits": 4, "load_dtype": torch.float32},
+    "8bit": {"bits": 8, "load_dtype": torch.float32},
+    "16bit": {"load_dtype": torch.bfloat16},
+}
+
+
 def do_evaluate(model_name: str,
+                model_dtype: str,
                 adapter_names: List[str],
+                batch_size: int = 2,
                 device: str = "cuda:0",
                 output: str = "mmlu_scores.csv"):
     tokenizer = mlora.Tokenizer(model_name)
     model = mlora.LlamaModel.from_pretrained(
-        model_name, device=device, load_dtype=torch.bfloat16)
+        model_name, device=device, **model_dtypes[model_dtype])
     for name in adapter_names:
         logging.info(f"Loading adapter {name}")
         model.load_adapter_weight(name)
@@ -234,7 +245,8 @@ def do_evaluate(model_name: str,
     csv_data = [["mmlu_subject", "adapter_name", "acc_score"]]
     for subject in mmlu_subjects:
         logging.info(f"Performing MMLU/{subject} Benchmark")
-        results = evaluate(subject, tokenizer, model, adapter_names, 2, device)
+        results = evaluate(subject, tokenizer, model,
+                           adapter_names, batch_size, device)
         for name, result in results.items():
             acc = sum(result)/len(result)
             csv_data.append([subject, name, acc])
@@ -243,12 +255,23 @@ def do_evaluate(model_name: str,
             writer.writerows(csv_data)
 
 
-log_handlers = [logging.StreamHandler()]
-logging.basicConfig(format='[%(asctime)s] m-LoRA: %(message)s',
-                    level=logging.INFO,
-                    handlers=log_handlers,
-                    force=True)
+def setup_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    random.seed(seed)
+
+
+def main(config: str):
+    setup_seed(66)
+    log_handlers = [logging.StreamHandler()]
+    logging.basicConfig(format='[%(asctime)s] m-LoRA: %(message)s',
+                        level=logging.INFO,
+                        handlers=log_handlers,
+                        force=True)
+    with open(config, 'r', encoding='utf8') as fp:
+        mmlu_config = json.load(fp)
+    do_evaluate(**mmlu_config)
+
 
 if __name__ == "__main__":
-    fire.Fire(lambda model_name, device="cuda:0", output="mmlu_scores.csv": do_evaluate(
-        model_name, ["alpaca-lora-7b", "mixlora-7b"], device, output))
+    fire.Fire(main)
