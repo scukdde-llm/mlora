@@ -38,7 +38,8 @@ def prepare_data(tokenizer: mlora.Tokenizer,
                  dev_data: datasets.Dataset,
                  test_data: datasets.Dataset,
                  k_shots=5,
-                 max_seq_len=2048):
+                 max_seq_len=2048,
+                 batch_padding=True):
 
     sequence_lengths = []
     batch_tokens = []
@@ -71,15 +72,19 @@ def prepare_data(tokenizer: mlora.Tokenizer,
         batch_tokens.append(tokens)
         batch_labels.append(test_data_point["answer"])
 
-    logging.info(f"Max tokens: {max_tokens_len}/{max_seq_len}")
-    if max_tokens_len < max_seq_len:
-        max_seq_len = math.ceil(max_tokens_len / 8) * 8
-    logging.info(f"Max sequence length: {max_seq_len}")
+    if batch_padding:
+        logging.info(f"Max tokens: {max_tokens_len}/{max_seq_len}")
+        if max_tokens_len < max_seq_len:
+            max_seq_len = math.ceil(max_tokens_len / 8) * 8
+        logging.info(f"Max sequence length: {max_seq_len}")
 
     for tokens in batch_tokens:
-        sequence_lengths.append(len(tokens) - 1)
-        while len(tokens) < max_seq_len:
-            tokens.append(tokenizer.pad_id_)
+        if batch_padding:
+            sequence_lengths.append(len(tokens) - 1)
+            while len(tokens) < max_seq_len:
+                tokens.append(tokenizer.pad_id_)
+        else:
+            sequence_lengths.append(-1)
         atten_masks.append(tokenizer.attention_mask(tokens))
 
     return sequence_lengths, batch_tokens, atten_masks, batch_labels
@@ -97,7 +102,7 @@ def evaluate(subject: str,
     mmlu = datasets.load_dataset("cais/mmlu", subject)
 
     sequence_lengths, batch_tokens, atten_masks, batch_labels = prepare_data(
-        tokenizer, subject, mmlu["dev"], mmlu["test"], 5, max_seq_len)
+        tokenizer, subject, mmlu["dev"], mmlu["test"], 5, max_seq_len, batch_size > 1)
 
     # load adapters
 
@@ -137,6 +142,7 @@ def evaluate(subject: str,
             batch_tokens_=batch_tokens[start_pos:end_pos]*len(adapter_names),
             attention_masks_=atten_masks[start_pos:end_pos]*len(adapter_names),
             gradient_checkpoint_=False,
+            inference_seq_pos_=-1 if batch_size > 1 else 0,
         )
 
         outputs = model.forward(input_args)
@@ -148,7 +154,7 @@ def evaluate(subject: str,
             logits = output.logits
             logits = logits[torch.arange(
                 bsz, device=logits.device), sequence_lengths[start_pos:end_pos]]
-            logits = logits[:, label_indices].float()
+            logits = logits[:, label_indices]
             logits = logits.softmax(-1).argmax(-1)
             result = (logits == labels).int().tolist()
             results[output.adapter_name].extend(result)
@@ -234,7 +240,7 @@ mmlu_categories = {
 model_dtypes = {
     "4bit": {"bits": 4, "load_dtype": torch.float32},
     "8bit": {"bits": 8, "load_dtype": torch.float32},
-    "16bit": {"load_dtype": torch.bfloat16},
+    "16bit": {"load_dtype": torch.float16},
 }
 
 

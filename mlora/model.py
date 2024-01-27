@@ -1,7 +1,6 @@
 from mlora.modelargs import KVCache, LoraConfig, MultiLoraBatchData, LLMModelOutput
 
 import torch
-import einops
 
 from abc import ABCMeta, abstractclassmethod
 from typing import Tuple, Dict, List, Optional
@@ -32,22 +31,20 @@ def precompute_mask(tokens: torch.Tensor,
 
 
 def precompute_rope_angle(dim: int, seq_len: int, device: str, theta: float = 10000.0) -> Tuple[torch.Tensor, torch.Tensor]:
-    angles = 1.0 / (theta ** (torch.arange(0, dim, 2).to(device)
-                              [: (dim // 2)].to(torch.float) / dim))
-    seq = torch.arange(seq_len, device=angles.device)
-    emb = torch.outer(seq, angles).float()
-    emb = einops.repeat(emb, "... n -> ... (n r)", r=2)
+    inv_freq = 1.0 / \
+        (theta ** (torch.arange(0, dim, 2).float().to(device) / dim))
+    t = torch.arange(seq_len, device=device, dtype=inv_freq.dtype)
+    freqs = torch.outer(t, inv_freq)
+    emb = torch.cat((freqs, freqs), dim=-1)
 
-    emb.requires_grad_(False)
     # cos(angle), sin(angle)
-    return (emb.cos().to(torch.float32), emb.sin().to(torch.float32))
+    return (emb.cos().float(), emb.sin().float())
 
 
-def rotate_half(x: torch.Tensor) -> torch.Tensor:
-    x = einops.rearrange(x, "... (d r) -> ... d r", r=2)
-    x1, x2 = x.unbind(dim=-1)
-    x = torch.stack((-x2, x1), dim=-1)
-    return einops.rearrange(x, "... d r -> ... (d r)")
+def rotate_half(x):
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2:]
+    return torch.cat((-x2, x1), dim=-1)
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -65,12 +62,12 @@ def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor,
     # data shape is: batch_size * max_seq_len * n_head * n_dim
     _, max_seq_len, _, dim_head = xq.shape
 
-    cos = angle[0][:max_seq_len].view(max_seq_len, 1, dim_head)
-    sin = angle[1][:max_seq_len].view(max_seq_len, 1, dim_head)
+    cos = angle[0][:max_seq_len].view(max_seq_len, 1, dim_head).to(xq.dtype)
+    sin = angle[1][:max_seq_len].view(max_seq_len, 1, dim_head).to(xq.dtype)
 
-    xq = (xq * cos) + (rotate_half(xq) * sin)
-    xk = (xk * cos) + (rotate_half(xk) * sin)
-    return (xq.to(dtype), xk.to(dtype))
+    q_embed = (xq * cos) + (rotate_half(xq) * sin)
+    k_embed = (xk * cos) + (rotate_half(xk) * sin)
+    return q_embed, k_embed
 
 
 def apply_rotary_emb_to_one(x: torch.Tensor, angle: Tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:

@@ -44,15 +44,12 @@ class RMSNormLayer(torch.nn.Module):
         self.norm_eps_ = eps
         self.weight_ = weight
 
-    def _norm(self, data: torch.Tensor) -> torch.Tensor:
-        return data * torch.rsqrt(+ self.norm_eps_)
+    def _norm(self, x):
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.norm_eps_)
 
-    def forward(self, data: torch.Tensor) -> torch.Tensor:
-        input_dtype = data.dtype
-        v = data.to(torch.float32).pow(2).mean(-1, keepdim=True)
-        data = data * torch.rsqrt(v + self.norm_eps_)
-
-        return (self.weight_ * data).to(input_dtype)
+    def forward(self, x: torch.Tensor):
+        output = self._norm(x.float()).to(x.dtype)
+        return output * self.weight_
 
 
 class CasualOutputLayer(LLMOutput):
@@ -62,7 +59,7 @@ class CasualOutputLayer(LLMOutput):
         self.lm_head_: torch.nn.Linear = weight
 
     def forward(self, data: torch.Tensor) -> torch.Tensor:
-        return self.lm_head_(data.to(torch.float32))
+        return self.lm_head_(data).float()
 
     def loss(self,
              input_ids: torch.Tensor,
@@ -336,7 +333,7 @@ class LlamaModel(LLMModel):
 
         self.norm_: RMSNormLayer = None    # dim
         self.lm_head_ = torch.nn.Linear(
-            args.dim_, args.vocab_size_, bias=False, device=args.device_, dtype=torch.float32)
+            args.dim_, args.vocab_size_, bias=False, device=args.device_, dtype=args.dtype_)
         self.output_: OutputLayer = OutputLayer()
 
         # cos and sin
@@ -424,6 +421,8 @@ class LlamaModel(LLMModel):
                 device=self.device_,
                 weight=weight)
         self.output_.layers_[config.adapter_name_] = output_layer
+        if config.adapter_name_ == "default":
+            return
         # init transformer layers
         for transformer_layer in self.layers_:
             transformer_layer.init_lora_layer_weight(config, weight)
@@ -645,12 +644,16 @@ class LlamaModel(LLMModel):
     def load_adapter_weight(self, path: str, adapter_name: str = None):
         if adapter_name is None:
             adapter_name = path
-        if not os.path.exists(path):
-            path = snapshot_download(repo_id=path, repo_type="model")
-        with open(path + os.sep + "adapter_config.json", 'r', encoding='utf8') as fp:
-            lora_config = lora_config_factory(json.load(fp))
-        lora_config.adapter_name_ = adapter_name
-        lora_weight = torch.load(
-            path + os.sep + "adapter_model.bin", map_location=self.device_)
+        if path != "default":
+            if not os.path.exists(path):
+                path = snapshot_download(repo_id=path, repo_type="model")
+            with open(path + os.sep + "adapter_config.json", 'r', encoding='utf8') as fp:
+                lora_config = lora_config_factory(json.load(fp))
+            lora_config.adapter_name_ = adapter_name
+            lora_weight = torch.load(
+                path + os.sep + "adapter_model.bin", map_location=self.device_)
+        else:
+            lora_config = LoraConfig(adapter_name_=path)
+            lora_weight = None
         self.init_lora_layer_weight(lora_config, lora_weight)
         return adapter_name
