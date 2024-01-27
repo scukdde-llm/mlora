@@ -22,18 +22,19 @@ def format_subject(subject):
 
 
 def format_prompt(data_point, with_answer=True):
-    p = data_point["question"]
-    for idx, text in enumerate(data_point["choices"]):
-        p += f"\n{choices_map[idx]}. {text}"
+    question = data_point["question"].strip()
+    choices = "".join(
+        [f"{key}. {choice}\n" for key, choice in zip(
+            choices_map, data_point["choices"])]
+    )
+    prompt = f"{question}\n{choices}Answer:"
     if with_answer:
-        p += "\nAnswer: " + choices_map[data_point["answer"]] + "\n\n"
-    else:
-        p += "\nAnswer: "
-    return p
+        prompt += " {}\n\n".format(choices_map[data_point["answer"]])
+    return prompt
 
 
 def prepare_data(tokenizer: mlora.Tokenizer,
-                 category: str,
+                 subject: str,
                  dev_data: datasets.Dataset,
                  test_data: datasets.Dataset,
                  k_shots=5,
@@ -48,8 +49,9 @@ def prepare_data(tokenizer: mlora.Tokenizer,
     tokens = None
     for test_data_point in test_data:
         test_prompt = format_prompt(test_data_point, False)
-        dev_prompt = "The following are multiple choice questions (with answers) about"
-        dev_prompt += format_subject(category) + ".\n\n"
+        dev_prompt = "The following are multiple choice questions (with answers) about {}.\n\n".format(
+            format_subject(subject)
+        )
         k = k_shots
         for dev_data_point in dev_data:
             k -= 1
@@ -84,7 +86,7 @@ def prepare_data(tokenizer: mlora.Tokenizer,
 
 
 @torch.inference_mode()
-def evaluate(category: str,
+def evaluate(subject: str,
              tokenizer: mlora.Tokenizer,
              model: mlora.LlamaModel,
              adapter_names: List[str],
@@ -92,10 +94,10 @@ def evaluate(category: str,
              max_seq_len: int = 2048):
     # prepare data
 
-    mmlu = datasets.load_dataset("cais/mmlu", category)
+    mmlu = datasets.load_dataset("cais/mmlu", subject)
 
     sequence_lengths, batch_tokens, atten_masks, batch_labels = prepare_data(
-        tokenizer, category, mmlu["dev"], mmlu["test"], 5, max_seq_len)
+        tokenizer, subject, mmlu["dev"], mmlu["test"], 5, max_seq_len)
 
     # load adapters
 
@@ -110,7 +112,7 @@ def evaluate(category: str,
 
     label_indices = [0]*len(choices_map)
     for idx, text in enumerate(choices_map):
-        ids = tokenizer.encode(" " + text, False, False)
+        ids = tokenizer.encode(text, False, False)
         label_indices[idx] = ids[-1]
     label_indices = torch.tensor(
         label_indices, dtype=torch.long, device=model.device_)
@@ -146,7 +148,7 @@ def evaluate(category: str,
             logits = output.logits
             logits = logits[torch.arange(
                 bsz, device=logits.device), sequence_lengths[start_pos:end_pos]]
-            logits = logits[:, label_indices]
+            logits = logits[:, label_indices].float()
             logits = logits.softmax(-1).argmax(-1)
             result = (logits == labels).int().tolist()
             results[output.adapter_name].extend(result)
