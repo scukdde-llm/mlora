@@ -88,13 +88,14 @@ def evaluate(category: str,
              tokenizer: mlora.Tokenizer,
              model: mlora.LlamaModel,
              adapter_names: List[str],
-             batch_size: int = 2):
+             batch_size: int = 2,
+             max_seq_len: int = 2048):
     # prepare data
 
     mmlu = datasets.load_dataset("cais/mmlu", category)
 
     sequence_lengths, batch_tokens, atten_masks, batch_labels = prepare_data(
-        tokenizer, category, mmlu["dev"], mmlu["test"], 5, 2048)
+        tokenizer, category, mmlu["dev"], mmlu["test"], 5, max_seq_len)
 
     # load adapters
 
@@ -239,6 +240,7 @@ def do_evaluate(model_name: str,
                 model_dtype: str,
                 adapter_names: List[str],
                 batch_size: int = 2,
+                max_seq_len: int = 2048,
                 device: str = "cuda:0",
                 output: str = "mmlu_scores.csv"):
     tokenizer = mlora.Tokenizer(model_name)
@@ -253,7 +255,7 @@ def do_evaluate(model_name: str,
     for subject, subcategory in mmlu_subcategories.items():
         logging.info(f"Performing MMLU/{subject} Benchmark")
         results = evaluate(subject, tokenizer, model,
-                           adapter_names, batch_size)
+                           adapter_names, batch_size, max_seq_len)
         category = None
         for category_name, subcategory_names in mmlu_categories.items():
             if subcategory[-1] in subcategory_names:
