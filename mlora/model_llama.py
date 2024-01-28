@@ -2,7 +2,7 @@ from mlora.modelargs import KVCache, LLMModelArgs, LLMModelOutput, MultiLoraBatc
 from mlora.modelargs import LoraConfig, MixConfig, lora_config_factory
 from mlora.checkpoint import CheckpointRecomputeFunction
 from mlora.model import repeat_kv, apply_rotary_emb, precompute_rope_angle, precompute_mask
-from mlora.model import LLMModel, LLMOutput, RMSNorm
+from mlora.model import RMSNorm, LLMOutput, LLMModel
 from mlora.feed_forward import FeedForward
 from mlora.lora_liner import Linear
 from mlora.generate import GenerateConfig
@@ -36,20 +36,6 @@ class Embedding(torch.nn.Module):
                            padding_idx=self.padding_idx_)
         data.requires_grad_(True)
         return data
-
-
-class RMSNormLayer(torch.nn.Module):
-    def __init__(self, weight: torch.Tensor, eps: float = 1e-6):
-        super().__init__()
-        self.norm_eps_ = eps
-        self.weight_ = weight
-
-    def _norm(self, x):
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.norm_eps_)
-
-    def forward(self, x: torch.Tensor):
-        output = self._norm(x.float()).to(x.dtype)
-        return output * self.weight_
 
 
 class CasualOutputLayer(LLMOutput):
@@ -247,9 +233,12 @@ class Transformer(torch.nn.Module):
         xv = self.wv_.forward(attention_norm_data, input_args)
 
         # conver shape to multi head
-        xq = xq.view(batch_size, max_seq_len, self.n_heads_, self.head_dim_)
-        xk = xk.view(batch_size, max_seq_len, self.n_kv_heads_, self.head_dim_)
-        xv = xv.view(batch_size, max_seq_len, self.n_kv_heads_, self.head_dim_)
+        xq = xq.view(batch_size, max_seq_len, self.n_heads_,
+                     self.head_dim_).transpose(1, 2)
+        xk = xk.view(batch_size, max_seq_len, self.n_kv_heads_,
+                     self.head_dim_).transpose(1, 2)
+        xv = xv.view(batch_size, max_seq_len, self.n_kv_heads_,
+                     self.head_dim_).transpose(1, 2)
 
         # apply rotary embedding
         xq, xk = apply_rotary_emb(xq, xk, rope_angle)
@@ -261,29 +250,30 @@ class Transformer(torch.nn.Module):
                 max_seq_len, input_args.inference_seq_pos_)
 
         # for llama2 need to repeat the heads
-        # before dim: batch_size, seq_len, n_kv_head, head_dim
-        # after dim: batch_size, seq_len, n_head, head_dim
+        # before dim: batch_size, n_kv_head, seq_len, head_dim
+        # after dim: batch_size, n_head, seq_len, head_dim
         xk = repeat_kv(xk, self.n_rep_)
         xv = repeat_kv(xv, self.n_rep_)
 
         if input_args.inference_mode_:
-            xq = xq.transpose(1, 2)
-            xk = xk.transpose(1, 2)
-            xv = xv.transpose(1, 2)
-            attention_score = torch.matmul(xq, xk.transpose(2, 3)
-                                           ) / math.sqrt(self.head_dim_)
+            attention_score = torch.matmul(
+                xq, xk.transpose(2, 3)) / math.sqrt(self.head_dim_)
             if mask is not None:
+                assert mask.size() == (
+                    batch_size, 1, max_seq_len, xk.shape[-2])
                 attention_score = attention_score + mask
             attention_score = F.softmax(
                 attention_score.float(), dim=-1).to(xq.dtype)
             attention_score = torch.matmul(attention_score, xv)
             attention_score = attention_score.transpose(1, 2).contiguous()
         else:
-            # use xformers when training
+            xq = xq.transpose(1, 2)
+            xk = xk.transpose(1, 2)
+            xv = xv.transpose(1, 2)
             attention_score = xformers.ops.memory_efficient_attention(
                 xq, xk, xv, mask)
 
-        attention_score = attention_score.view(batch_size, max_seq_len, -1)
+        attention_score = attention_score.reshape(batch_size, max_seq_len, -1)
 
         # get output attention score
         data = data + self.wo_.forward(attention_score, input_args)
@@ -305,7 +295,7 @@ class LlamaSequentialWrapper(torch.nn.Module):
     def forward(self, input: Tuple) -> Tuple:
         module_name = self.name()
 
-        if module_name == "Embedding" or module_name == "RMSNormLayer":
+        if module_name == "Embedding" or module_name == "RMSNorm":
             output = self.wrapper_module_.forward(input[0])
             return (output, ) + input[1:]
         elif module_name == "OutputLayer":
@@ -331,14 +321,14 @@ class LlamaModel(LLMModel):
         for layer_id in range(args.n_layers_):
             self.layers_.append(Transformer(layer_id, args))
 
-        self.norm_: RMSNormLayer = None    # dim
+        self.norm_: RMSNorm = None    # dim
         self.lm_head_ = torch.nn.Linear(
             args.dim_, args.vocab_size_, bias=False, device=args.device_, dtype=args.dtype_)
         self.output_: OutputLayer = OutputLayer()
 
         # cos and sin
         self.rope_angle_: Tuple[torch.Tensor, torch.Tensor] = precompute_rope_angle(
-            args.dim_ // args.n_heads_, args.max_seq_len_, args.device_)
+            args.dim_ // args.n_heads_, args.max_seq_len_, args.rope_theta_, args.device_)
 
         self.norm_eps_ = args.norm_eps_
 
@@ -490,6 +480,7 @@ class LlamaModel(LLMModel):
         llama_args.max_seq_len_ = 4096 if not hasattr(
             llama_model.config, "max_sequence_length") else llama_model.config.max_sequence_length
         llama_args.pad_token_id_ = llama_model.config.pad_token_id
+        llama_args.rope_theta_ = llama_model.config.rope_theta
         if llama_args.pad_token_id_ is None:
             llama_args.pad_token_id_ = -1
         llama_args.dtype_ = llama_model.dtype
@@ -509,7 +500,7 @@ class LlamaModel(LLMModel):
 
         norm_weight = llama_model.model.norm.weight.to(
             device=device).detach()
-        model.norm_ = RMSNormLayer(norm_weight, model.norm_eps_)
+        model.norm_ = RMSNorm(norm_weight, model.norm_eps_)
 
         for idx, layer in enumerate(llama_model.model.layers):
             model.layers_[idx].wq_ = Linear(

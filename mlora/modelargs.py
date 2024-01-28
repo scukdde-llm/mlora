@@ -27,6 +27,7 @@ class LLMModelArgs:
     hidden_dropout_: float = 0.0
     vocab_size_: int = -1
     pad_token_id_: int = -1
+    rope_theta_: float = 10000.0
     max_seq_len_: int = 2048
     device_: str = ""
     dtype_: torch.dtype = None
