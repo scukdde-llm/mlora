@@ -140,8 +140,13 @@ class OutputLayer(torch.nn.Module):
 class Transformer(torch.nn.Module):
     def __init__(self, layer_id: int, args: LLMModelArgs):
         super().__init__()
+        # cos and sin
+        self.rope_angle_: Tuple[torch.Tensor, torch.Tensor] = precompute_rope_angle(
+            args.dim_ // args.n_heads_, args.max_seq_len_, args.rope_theta_, args.device_)
         # attention
         self.attention_norm_: RMSNorm = None  # dim
+        self.attention_cos_: torch.Tensor = None
+        self.attention_sin_: torch.Tensor = None
         self.wq_: Linear = None  # dim * dim
         self.wk_: Linear = None  # dim * dim
         self.wv_: Linear = None  # dim * dim
@@ -221,7 +226,6 @@ class Transformer(torch.nn.Module):
                 data: torch.Tensor,
                 input_args: MultiLoraBatchData,
                 mask: torch.Tensor,
-                rope_angle: Tuple[torch.Tensor, torch.Tensor],
                 router_logits: List[List] = None,
                 kv_cache: KVCache = None):
         batch_size, max_seq_len, _ = data.shape
@@ -241,7 +245,7 @@ class Transformer(torch.nn.Module):
                      self.head_dim_).transpose(1, 2)
 
         # apply rotary embedding
-        xq, xk = apply_rotary_emb(xq, xk, rope_angle)
+        xq, xk = apply_rotary_emb(xq, xk, self.rope_angle_)
 
         # apply kv cache
         if kv_cache is not None:
@@ -326,10 +330,6 @@ class LlamaModel(LLMModel):
             args.dim_, args.vocab_size_, bias=False, device=args.device_, dtype=args.dtype_)
         self.output_: OutputLayer = OutputLayer()
 
-        # cos and sin
-        self.rope_angle_: Tuple[torch.Tensor, torch.Tensor] = precompute_rope_angle(
-            args.dim_ // args.n_heads_, args.max_seq_len_, args.rope_theta_, args.device_)
-
         self.norm_eps_ = args.norm_eps_
 
         self.device_ = args.device_
@@ -366,8 +366,8 @@ class LlamaModel(LLMModel):
         if input.inference_mode_:
             input.gradient_checkpoint_ = False
 
-        data = (tokens, input, attention_masks, self.rope_angle_,
-                router_logits, kv_cache, input.gradient_checkpoint_)
+        data = (tokens, input, attention_masks, router_logits,
+                kv_cache, input.gradient_checkpoint_)
 
         for seq_layer in seq_module:
             data = seq_layer.forward(data)
