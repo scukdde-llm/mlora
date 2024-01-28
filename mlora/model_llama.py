@@ -252,7 +252,7 @@ class Transformer(torch.nn.Module):
         xv = xv.view(batch_size, max_seq_len, self.n_kv_heads_, self.head_dim_)
 
         # apply rotary embedding
-        xq, xk = apply_rotary_emb(xq, xk, rope_angle, self.dtype_)
+        xq, xk = apply_rotary_emb(xq, xk, rope_angle)
 
         # apply kv cache
         if kv_cache is not None:

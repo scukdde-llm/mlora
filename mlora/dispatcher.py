@@ -100,16 +100,12 @@ class TrainTask():
             assert isinstance(inputs, List)
             assert isinstance(labels, List) or labels is None
             if is_train_data:
-                tokens = []
-                for text in inputs:
-                    tokens.extend(self.tokenizer_.encode(text, **flags))
+                tokens = self.tokenizer_.encode(inputs, **flags)
                 max_train_tokens_len = max(max_train_tokens_len, len(tokens))
                 if len(tokens) > self.train_cutoff_len_:
                     tokens = tokens[:self.train_cutoff_len_]
             else:
-                tokens = []
-                for text in inputs:
-                    tokens.extend(self.tokenizer_.encode(text, **flags))
+                tokens = self.tokenizer_.encode(inputs, **flags)
 
             ret.append(TrainData(tokens_=tokens, labels_=labels))
             if idx % 10000 == 0:

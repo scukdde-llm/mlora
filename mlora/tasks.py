@@ -3,7 +3,7 @@ from mlora.tokenizer import Tokenizer
 from mlora.prompter import Prompter
 from mlora.model import LLMModel
 
-from typing import List, Tuple, Callable
+from typing import Dict, List, Tuple, Callable
 from dataclasses import dataclass
 import datasets as hf_datasets
 import evaluate as hf_evaluate
@@ -15,10 +15,10 @@ class BasicTask():
     def __init__(self) -> None:
         pass
 
-    def dataload_function(self, data_point):
+    def dataload_function(self, data_point) -> Tuple:
         return None, None, {"bos": True, "eos": True}
 
-    def init_kwargs(self):
+    def init_kwargs(self) -> Dict:
         return {}
 
 
@@ -28,11 +28,11 @@ class CasualTask(BasicTask):
         super().__init__()
         self.prompter_ = prompter
 
-    def dataload_function(self, data_point):
-        return ([self.prompter_.generate_prompt(
+    def dataload_function(self, data_point) -> Tuple:
+        return (self.prompter_.generate_prompt(
             data_point["instruction"],
             data_point.get("input", None),
-            data_point.get("output", None))],
+            data_point.get("output", None)),
             None, {"bos": True, "eos": True})
 
 
@@ -49,40 +49,15 @@ class SequenceClassification(BasicTask):
         self.num_labels_ = num_labels
         self.task_type_ = task_type
 
-    def dataload_function(self, data_point):
+    def dataload_function(self, data_point) -> Tuple:
         return self.dataload_function_(data_point)
 
-    def init_kwargs(self):
+    def init_kwargs(self) -> Dict:
         return {
             "task_type": self.task_type_,
             "num_labels": self.num_labels_,
             "label_dtype": self.label_dtype_,
         }
-
-    def _pool_logits(self, batch_tokens: List, logits: torch.Tensor) -> torch.Tensor:
-        batch_size = logits.shape[0]
-        if batch_tokens is None or self.pad_id_ is None:
-            sequence_lengths = -1
-        else:
-            input_ids = torch.tensor(batch_tokens, dtype=torch.long)
-            sequence_lengths = (
-                torch.eq(input_ids, self.pad_id_).int().argmax(-1) - 1).to(logits.device)
-        return logits[torch.arange(batch_size, device=logits.device), sequence_lengths]
-
-    def evaluate(self, logits: torch.Tensor, labels: List,
-                 batch_tokens: List = None) -> Tuple:
-        labels = torch.tensor(
-            labels, dtype=self.label_dtype_, device=logits.device)
-        pooled_logits = self._pool_logits(batch_tokens, logits)
-        if self.task_type_ == "regression":
-            if self.num_labels_ == 1:
-                pooled_logits = pooled_logits[:, 0]
-        elif self.task_type_ == "single_label_classification":
-            pooled_logits = torch.argmax(
-                pooled_logits, dim=-1).to(self.label_dtype_)
-        elif self.task_type_ != "multi_label_classification":
-            raise ValueError(f"unknown task type {self.task_type_}")
-        return pooled_logits, labels.squeeze()
 
 
 classification_tasks = {
@@ -171,7 +146,7 @@ classification_tasks = {
         num_labels=2,
         label_dtype=torch.long,
         dataload_function=lambda data_point: (
-            data_point["sentence1"] + " </s> " + data_point["sentence2"],
+            [data_point["sentence1"] + " </s> " + data_point["sentence2"]],
             [int(data_point["label"])],
             {"bos": True, "eos": True},
         ),
@@ -223,9 +198,9 @@ def _dispatch_task_in(tokenizer: Tokenizer, configs: List[EvaluateConfig], max_s
             if idx >= len(config.data_):
                 break
             texts, labels, kwargs = config.dataload(config.data_[idx])
-            tokens = []
-            for text in texts:
-                tokens.extend(tokenizer.encode(data=text, **kwargs))
+            if "eos" in kwargs:
+                kwargs["eos"] = False
+            tokens = tokenizer.encode(texts, **kwargs)
             if len(tokens) > max_seq_len:
                 tokens = tokens[:max_seq_len]
             while len(tokens) < max_seq_len:
@@ -279,7 +254,7 @@ def evaluate(model: LLMModel,
             logits = output.logits
 
             batch_size = logits.shape[0]
-            sequence_lengths = (torch.eq(input_ids[start_idx:end_idx, 1:],
+            sequence_lengths = (torch.eq(input_ids[start_idx:end_idx],
                                          tokenizer.pad_id_).int().argmax(-1) - 1).to(logits.device)
             pooled_logits = logits[torch.arange(batch_size,
                                                 device=logits.device), sequence_lengths]
@@ -295,7 +270,7 @@ def evaluate(model: LLMModel,
                 raise ValueError(f"unknown task type {task.task_type_}")
 
             metric.add_batch(predictions=pooled_logits.detach().cpu(),
-                             references=labels.squeeze().detach().cpu())
+                             references=labels.detach().cpu())
             logging.info(f"{config.adapter_name_} evaluate data:")
             logging.info(
                 f"    step: {config.batch_start_idx_}/{len(config.data_)}")

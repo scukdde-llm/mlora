@@ -38,7 +38,7 @@ def precompute_rope_angle(dim: int, seq_len: int, device: str, theta: float = 10
     emb = torch.cat((freqs, freqs), dim=-1)
 
     # cos(angle), sin(angle)
-    return (emb.cos().float(), emb.sin().float())
+    return (emb.cos().to(torch.float32), emb.sin().to(torch.float32))
 
 
 def rotate_half(x):
@@ -57,8 +57,7 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
 
 
 def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor,
-                     angle: Tuple[torch.Tensor, torch.Tensor],
-                     dtype: torch.dtype) -> Tuple[torch.Tensor, torch.Tensor]:
+                     angle: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
     # data shape is: batch_size * max_seq_len * n_head * n_dim
     _, max_seq_len, _, dim_head = xq.shape
 
