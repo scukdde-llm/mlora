@@ -97,7 +97,6 @@ class TrainTask():
         max_train_tokens_len = 0
         for idx, data_point in enumerate(data):
             inputs, labels, flags = self.dataload_function_(data_point)
-            assert isinstance(inputs, List)
             assert isinstance(labels, List) or labels is None
             if is_train_data:
                 tokens = self.tokenizer_.encode(inputs, **flags)
