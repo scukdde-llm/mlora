@@ -147,7 +147,6 @@ def generate(model: LLMModel,
              repetition_penalty=1.1,
              renormalize_logits=True,
              max_gen_len=128,
-             use_cache=True,
              stream_callback=None):
 
     device = torch.device(model.device_)
@@ -174,8 +173,6 @@ def generate(model: LLMModel,
         tokens[k, : len(t)] = torch.tensor(t, dtype=torch.int64, device=device)
 
     prev_pos = 0
-    kv_cache = model.prepare_kv_cache(
-        batch_size, total_len) if use_cache else None
     stop_reached = torch.tensor([False] * batch_size, device=device)
     input_text_mask = tokens != tokenizer.pad_id_
     for cur_pos in range(min_tokens_len, total_len):
@@ -183,7 +180,7 @@ def generate(model: LLMModel,
             lora_batch_data_config_=batch_data_config,
             batch_tokens_=tokens[:, prev_pos:cur_pos].tolist(),
             inference_seq_pos_=prev_pos)
-        outputs = model.forward(input_data, kv_cache=kv_cache)
+        outputs = model.forward(input_data)
         for output in outputs:
             start_idx = output.batch_start_idx_
             end_idx = output.batch_end_idx_
@@ -209,8 +206,7 @@ def generate(model: LLMModel,
 
         stop_reached |= (~input_text_mask[:, cur_pos]) & (
             next_token == tokenizer.eos_id_)
-        if kv_cache is not None:
-            prev_pos = cur_pos
+
         if all(stop_reached):
             break
 

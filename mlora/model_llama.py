@@ -1,4 +1,4 @@
-from mlora.modelargs import KVCache, LLMModelArgs, LLMModelOutput, MultiLoraBatchData
+from mlora.modelargs import LLMModelArgs, LLMModelOutput, MultiLoraBatchData
 from mlora.modelargs import LoraConfig, MixConfig, lora_config_factory
 from mlora.checkpoint import CheckpointRecomputeFunction
 from mlora.model import repeat_kv, apply_rotary_emb, precompute_rope_angle, precompute_mask
@@ -226,8 +226,7 @@ class Transformer(torch.nn.Module):
                 data: torch.Tensor,
                 input_args: MultiLoraBatchData,
                 mask: torch.Tensor,
-                router_logits: List[List] = None,
-                kv_cache: KVCache = None):
+                router_logits: List[List] = None):
         batch_size, max_seq_len, _ = data.shape
 
         attention_norm_data = self.attention_norm_.forward(data)
@@ -245,13 +244,9 @@ class Transformer(torch.nn.Module):
                      self.head_dim_).transpose(1, 2)
 
         # apply rotary embedding
-        xq, xk = apply_rotary_emb(xq, xk, self.rope_angle_)
-
-        # apply kv cache
-        if kv_cache is not None:
-            xk, xv = kv_cache.update(
-                xk, xv, self.layer_id_, batch_size,
-                max_seq_len, input_args.inference_seq_pos_)
+        cos = self.rope_angle_[0][:max_seq_len].to(xv.dtype)
+        sin = self.rope_angle_[1][:max_seq_len].to(xv.dtype)
+        xq, xk = apply_rotary_emb(xq, xk, cos, sin)
 
         # for llama2 need to repeat the heads
         # before dim: batch_size, n_kv_head, seq_len, head_dim
@@ -263,8 +258,6 @@ class Transformer(torch.nn.Module):
             attention_score = torch.matmul(
                 xq, xk.transpose(2, 3)) / math.sqrt(self.head_dim_)
             if mask is not None:
-                assert mask.size() == (
-                    batch_size, 1, max_seq_len, xk.shape[-2])
                 attention_score = attention_score + mask
             attention_score = F.softmax(
                 attention_score.float(), dim=-1).to(xq.dtype)
@@ -346,8 +339,7 @@ class LlamaModel(LLMModel):
 
     # train model or inference model: output is probs
     def forward(self, input: MultiLoraBatchData,
-                labels: List[List[int]] = None,
-                kv_cache: KVCache = None) -> List[LLMModelOutput]:
+                labels: List[List[int]] = None) -> List[LLMModelOutput]:
         tokens = torch.tensor(input.batch_tokens_,
                               dtype=torch.long, device=self.device_)
 
@@ -366,8 +358,8 @@ class LlamaModel(LLMModel):
         if input.inference_mode_:
             input.gradient_checkpoint_ = False
 
-        data = (tokens, input, attention_masks, router_logits,
-                kv_cache, input.gradient_checkpoint_)
+        data = (tokens, input, attention_masks,
+                router_logits, input.gradient_checkpoint_)
 
         for seq_layer in seq_module:
             data = seq_layer.forward(data)
@@ -607,10 +599,6 @@ class LlamaModel(LLMModel):
                     ] = transformer_layer.ffn_.moes_[lora_name].gate_.weight
 
         return lora_weight_dict
-
-    def prepare_kv_cache(self, batch_size, max_seq_len) -> KVCache:
-        return KVCache(batch_size, max_seq_len, self.n_kv_heads_,
-                       self.dim_ // self.n_heads_, len(self.layers_), self.device_, self.dtype_)
 
     def sequential_module(self) -> torch.nn.Sequential:
         seq_module = OrderedDict()

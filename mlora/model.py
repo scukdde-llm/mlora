@@ -1,4 +1,4 @@
-from mlora.modelargs import KVCache, LoraConfig, MultiLoraBatchData, LLMModelOutput
+from mlora.modelargs import LoraConfig, MultiLoraBatchData, LLMModelOutput
 
 import torch
 
@@ -59,13 +59,7 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
 
 
 def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor,
-                     angle: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
-    # data shape is: batch_size * n_head * max_seq_len * n_dim
-    slen = xq.shape[2]
-
-    cos = angle[0][:slen].to(xq.dtype)
-    sin = angle[1][:slen].to(xq.dtype)
-
+                     cos: torch.Tensor, sin: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     q_embed = (xq * cos) + (rotate_half(xq) * sin)
     k_embed = (xk * cos) + (rotate_half(xk) * sin)
     return q_embed, k_embed
@@ -125,10 +119,6 @@ class LLMModel(metaclass=ABCMeta):
         pass
 
     @abstractclassmethod
-    def prepare_kv_cache(self, batch_size, max_seq_len) -> KVCache:
-        pass
-
-    @abstractclassmethod
     def sequential_module(self) -> torch.nn.Sequential:
         pass
 
@@ -142,6 +132,5 @@ class LLMModel(metaclass=ABCMeta):
 
     @abstractclassmethod
     def forward(self, input: MultiLoraBatchData,
-                labels: List[List[int]] = None,
-                kv_cache: KVCache = None) -> List[LLMModelOutput]:
+                labels: List[List[int]] = None) -> List[LLMModelOutput]:
         pass
