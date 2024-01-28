@@ -240,7 +240,7 @@ mmlu_categories = {
 model_dtypes = {
     "4bit": {"bits": 4, "load_dtype": torch.float32},
     "8bit": {"bits": 8, "load_dtype": torch.float32},
-    "16bit": {"load_dtype": torch.float16},
+    "16bit": {"load_dtype": torch.bfloat16},
 }
 
 
@@ -248,7 +248,6 @@ def do_evaluate(model_name: str,
                 model_dtype: str,
                 adapter_names: List[str],
                 batch_size: int = 2,
-                max_seq_len: int = 2048,
                 device: str = "cuda:0",
                 output: str = "mmlu_scores.csv"):
     tokenizer = mlora.Tokenizer(model_name)
@@ -263,7 +262,7 @@ def do_evaluate(model_name: str,
     for subject, subcategory in mmlu_subcategories.items():
         logging.info(f"Performing MMLU/{subject} Benchmark")
         results = evaluate(subject, tokenizer, model,
-                           adapter_names, batch_size, max_seq_len)
+                           adapter_names, batch_size, model.max_seq_len_)
         category = None
         for category_name, subcategory_names in mmlu_categories.items():
             if subcategory[-1] in subcategory_names:
