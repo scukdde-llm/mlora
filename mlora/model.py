@@ -38,6 +38,7 @@ def precompute_rope_angle(dim: int, seq_len: int,
     t = torch.arange(seq_len, device=device, dtype=inv_freq.dtype)
     freqs = torch.outer(t, inv_freq)
     emb = torch.cat((freqs, freqs), dim=-1)
+    emb.requires_grad_(False)
 
     # cos(angle), sin(angle)
     return (emb.cos(), emb.sin())
