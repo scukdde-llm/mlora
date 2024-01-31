@@ -137,7 +137,7 @@ classification_tasks = {
         label_dtype=torch.float,
         dataload_function=lambda data_point: (
             [data_point["sentence1"], data_point["sentence2"]],
-            [int(data_point["label"])],
+            [float(data_point["label"])],
             {"bos": True, "eos": True},
         ),
     ),

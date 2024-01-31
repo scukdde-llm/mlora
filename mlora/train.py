@@ -1,5 +1,5 @@
 from mlora.modelargs import LoraConfig
-from mlora.dispatcher import Dispatcher
+from mlora.dispatcher import TrainTask, Dispatcher
 from mlora.tasks import CasualTask, classification_tasks
 from mlora.prompter import Prompter
 from mlora.model import LLMModel
@@ -101,9 +101,17 @@ def train(dispatcher: Dispatcher,
     for config in configs:
         config_dict[config.adapter_name_] = config
 
+    def task_in_callback(task: TrainTask):
+        adapter_name = task.adapter_name_
+        logging.info(f"Loading training task {adapter_name}")
+        config = config_dict[adapter_name]
+        config.prepare(train_paramas[adapter_name])
+        config.step_lr_scheduler(
+            task.total_epoch_num_, len(task.train_token_data_))
+
+    dispatcher.train_task_in_event_.register(task_in_callback)
+
     train_paramas = model.get_train_paramas()
-    for config in configs:
-        config.prepare(train_paramas[config.adapter_name_])
 
     step_cnt = 0
     while not dispatcher.check_task_done():
@@ -125,13 +133,15 @@ def train(dispatcher: Dispatcher,
                 total_loss += loss
 
         total_loss.backward()
-        for task in dispatcher.running_train_task_:
-            config = config_dict[task.adapter_name_]
-            config.step_lr_scheduler(
-                task.total_epoch_num_, len(task.train_token_data_))
+
+        for output in outputs:
+            adapter_name = output.adapter_name
+            config = config_dict[adapter_name]
             if step_cnt % config.accumulation_step_ == 0:
                 config.optimizer_.step()
                 config.lr_scheduler_.step()
+                logging.info(f"    adapter: {adapter_name}" +
+                             f"   lr: {config.lr_scheduler_.get_last_lr()[-1]}")
                 config.optimizer_.zero_grad()
 
             if step_cnt % save_step == 0:
