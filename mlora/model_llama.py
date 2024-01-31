@@ -98,13 +98,7 @@ class ClassificationOutputLayer(LLMOutput):
             input_ids, self.pad_id_).int().argmax(-1) - 1).to(output_logits.device)
         pooled_logits = output_logits[torch.arange(
             batch_size, device=output_logits.device), sequence_lengths]
-        if self.task_type_ == "regression":
-            loss_fn = torch.nn.MSELoss()
-            if self.num_labels_ == 1:
-                return loss_fn(pooled_logits.squeeze(), labels.squeeze())
-            else:
-                return loss_fn(pooled_logits, labels)
-        elif self.task_type_ == "single_label_classification":
+        if self.task_type_ == "single_label_classification":
             loss_fn = torch.nn.CrossEntropyLoss()
             return loss_fn(pooled_logits.view(-1, self.num_labels_), labels.view(-1))
         elif self.task_type_ == "multi_label_classification":

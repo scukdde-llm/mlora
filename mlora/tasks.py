@@ -131,16 +131,6 @@ classification_tasks = {
             {"bos": True, "eos": True},
         ),
     ),
-    "glue:stsb": SequenceClassification(
-        task_type="regression",
-        num_labels=1,
-        label_dtype=torch.float,
-        dataload_function=lambda data_point: (
-            [data_point["sentence1"], data_point["sentence2"]],
-            [float(data_point["label"])],
-            {"bos": True, "eos": True},
-        ),
-    ),
     "glue:wnli": SequenceClassification(
         task_type="single_label_classification",
         num_labels=2,
@@ -260,10 +250,7 @@ def evaluate(model: LLMModel,
                                                 device=logits.device), sequence_lengths]
             labels = torch.tensor(batch_labels[start_idx:end_idx],
                                   dtype=task.label_dtype_, device=logits.device)
-            if task.task_type_ == "regression":
-                if task.num_labels_ == 1:
-                    pooled_logits = pooled_logits[:, 0]
-            elif task.task_type_ == "single_label_classification":
+            if task.task_type_ == "single_label_classification":
                 pooled_logits = torch.argmax(
                     pooled_logits, dim=-1).to(task.label_dtype_)
             elif task.task_type_ != "multi_label_classification":
