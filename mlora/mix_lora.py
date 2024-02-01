@@ -106,7 +106,7 @@ class MixtralSparseMoe(torch.nn.Module):
                                           top_x_list].reshape(-1, hidden_dim)
             current_routing_weights = routing_weights[top_x_list,
                                                       idx_list, None]
-            router_states.append([top_x, current_routing_weights])
+            router_states.append((top_x, current_routing_weights))
             end_idx = start_idx + current_state.shape[0]
             expert_indexes.append((start_idx, end_idx))
             if expert_states is None:
@@ -242,11 +242,32 @@ class SwitchSparseMoe(torch.nn.Module):
         router_mask, router_probs, router_logits = self.route(norm_data)
         expert_index = torch.argmax(router_mask, dim=-1)
 
-        next_states = norm_data.clone()
+        router_states = []
+
+        start_idx = 0
+        expert_indexes = []
+        expert_states = None
         for idx in range(self.experts_):
             token_indices = router_mask[:, :, idx].bool()
-            next_states[token_indices] = expert_fn(
-                self.adapter_name_, self.act_, idx, norm_data[token_indices]).to(next_states.dtype)
+            current_state = norm_data[token_indices]
+            router_states.append(token_indices)
+            end_idx = start_idx + current_state.shape[0]
+            expert_indexes.append((start_idx, end_idx))
+            if expert_states is None:
+                expert_states = current_state
+            else:
+                expert_states = torch.cat(
+                    [expert_states, current_state], dim=0)
+            start_idx = end_idx
+
+        expert_states = expert_fn(
+            self.adapter_name_, self.act_, expert_indexes, expert_states)
+
+        next_states = norm_data.clone()
+        for idx in range(self.experts_):
+            token_indices = router_states[idx]
+            next_states[token_indices] = expert_states[idx].to(
+                next_states.dtype)
 
         hidden_states = router_probs * next_states
         hidden_states = data + self.dropout_(hidden_states)
