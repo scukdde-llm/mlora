@@ -81,11 +81,18 @@ class MixtralSparseMoe(torch.nn.Module):
         expert_mask = torch.nn.functional.one_hot(
             selected_experts, num_classes=self.experts_).permute(2, 1, 0)
 
-        # Loop over all available experts in the model and perform the computation on each expert
+        # Loop over all available experts in the model and pack batched data for experts
+        router_states = []
+
+        start_idx = 0
+        expert_indexes = []
+        expert_states = None
         for expert_idx in range(self.experts_):
             idx, top_x = torch.where(expert_mask[expert_idx])
 
             if top_x.shape[0] == 0:
+                router_states.append(None)
+                expert_indexes.append(None)
                 continue
 
             # in torch it is faster to index using lists than torch tensors
@@ -99,14 +106,33 @@ class MixtralSparseMoe(torch.nn.Module):
                                           top_x_list].reshape(-1, hidden_dim)
             current_routing_weights = routing_weights[top_x_list,
                                                       idx_list, None]
-            current_hidden_states = expert_fn(
-                self.adapter_name_, self.act_, expert_idx, current_state)
-            current_hidden_states = current_routing_weights * current_hidden_states
+            router_states.append([top_x, current_routing_weights])
+            end_idx = start_idx + current_state.shape[0]
+            expert_indexes.append((start_idx, end_idx))
+            if expert_states is None:
+                expert_states = current_state
+            else:
+                expert_states = torch.cat(
+                    [expert_states, current_state], dim=0)
+            start_idx = end_idx
 
+        expert_states = expert_fn(
+            self.adapter_name_, self.act_, expert_indexes, expert_states)
+
+        # Unpack
+        for expert_idx in range(self.experts_):
+            current_hidden_states = expert_states[expert_idx]
+
+            if current_hidden_states is None:
+                continue
+
+            top_x, current_routing_weights = router_states[expert_idx]
+            current_hidden_states = current_routing_weights * current_hidden_states
             # However `index_add_` only support torch tensors for indexing so we'll use
             # the `top_x` tensor here.
             final_hidden_states.index_add_(
                 0, top_x, current_hidden_states.to(hidden_states.dtype))
+
         final_hidden_states = final_hidden_states.reshape(
             batch_size, sequence_length, hidden_dim)
         return final_hidden_states, router_logits

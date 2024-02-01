@@ -66,9 +66,39 @@ class FeedForward(torch.nn.Module):
             with torch.no_grad():
                 self.moes_[config.adapter_name_].gate_.weight.copy_(gate)
 
-    def _expert_forward_callback(self, moe_name, act_fn, expert_idx, norm_data):
-        lora_name = f"moe.{moe_name}.experts.{expert_idx}"
-        return self._lora_forward(lora_name, act_fn, norm_data)
+    def _expert_forward_callback(self, moe_name, act_fn, expert_indexes, expert_states):
+        common_w1 = self.w1_.weight_.forward(expert_states)
+        common_w3 = self.w3_.weight_.forward(expert_states)
+        final_expert_states = []
+        for expert_idx, batch_idx in enumerate(expert_indexes):
+            if batch_idx is None:
+                final_expert_states.append(None)
+                continue
+
+            start_idx, end_idx = batch_idx
+            lora_name = f"moe.{moe_name}.experts.{expert_idx}"
+            data = expert_states[start_idx: end_idx]
+            if lora_name in self.w1_.loras_:
+                w1 = common_w1[start_idx: end_idx] + \
+                    self.w1_.loras_[lora_name].forward(data)
+            else:
+                w1 = common_w1[start_idx: end_idx]
+
+            if lora_name in self.w3_.loras_:
+                w3 = common_w3[start_idx: end_idx] + \
+                    self.w3_.loras_[lora_name].forward(data)
+            else:
+                w3 = common_w3[start_idx: end_idx]
+
+            act_result = act_fn(w1) * w3
+            if lora_name in self.w2_.loras_:
+                final_expert_states.append(self.w2_.weight_.forward(act_result) +
+                                           self.w2_.loras_[lora_name].forward(act_result))
+            else:
+                final_expert_states.append(
+                    self.w2_.weight_.forward(act_result))
+
+        return final_expert_states
 
     def _mixlora_forward(self, data: torch.Tensor, input_args: MultiLoraBatchData,
                          router_logits: List[List] = None):
