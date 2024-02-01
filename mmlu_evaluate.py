@@ -14,11 +14,11 @@ choices_map = ["A", "B", "C", "D"]
 
 
 def format_subject(subject):
-    l = subject.split("_")
-    s = ""
-    for entry in l:
-        s += " " + entry
-    return s
+    lst = subject.split("_")
+    sjt = ""
+    for entry in lst:
+        sjt += " " + entry
+    return sjt
 
 
 def format_prompt(data_point, with_answer=True):
@@ -115,7 +115,7 @@ def evaluate(subject: str,
     sequence_lengths = torch.tensor(
         sequence_lengths, dtype=torch.long, device=model.device_)
 
-    label_indices = [0]*len(choices_map)
+    label_indices = [0] * len(choices_map)
     for idx, text in enumerate(choices_map):
         ids = tokenizer.encode(text, False, False)
         label_indices[idx] = ids[-1]
@@ -139,8 +139,8 @@ def evaluate(subject: str,
 
         input_args = mlora.MultiLoraBatchData(
             lora_batch_data_config_=batch_data_config,
-            batch_tokens_=batch_tokens[start_pos:end_pos]*len(adapter_names),
-            attention_masks_=atten_masks[start_pos:end_pos]*len(adapter_names),
+            batch_tokens_=batch_tokens[start_pos:end_pos] * len(adapter_names),
+            attention_masks_=atten_masks[start_pos:end_pos] * len(adapter_names),
             gradient_checkpoint_=False,
             inference_seq_pos_=-1 if batch_size > 1 else 0,
         )
@@ -160,7 +160,7 @@ def evaluate(subject: str,
             results[output.adapter_name].extend(result)
 
         for name, result in results.items():
-            acc = sum(result)/len(result)
+            acc = sum(result) / len(result)
             logging.info(f"    {name} accuracy: {acc}")
 
         start_pos = end_pos
@@ -268,7 +268,7 @@ def do_evaluate(model_name: str,
             if subcategory[-1] in subcategory_names:
                 category = category_name
         for name, result in results.items():
-            acc = sum(result)/len(result)
+            acc = sum(result) / len(result)
             csv_data.append([category, subject, name, acc])
         with open(output, "w", newline='') as csvfile:
             writer = csv.writer(csvfile)

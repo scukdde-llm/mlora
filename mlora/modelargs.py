@@ -1,5 +1,5 @@
 from transformers.activations import ACT2FN
-from typing import List, Dict, Tuple, Callable
+from typing import List, Dict, Callable
 from dataclasses import dataclass
 
 import torch
