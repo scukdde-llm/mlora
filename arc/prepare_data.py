@@ -18,7 +18,7 @@ def prep_data(data, file_path):
         json.dump(json_data, f, indent=4)
 
 
-arc_data = datasets.load_dataset("allenai/ai2_arc", "ARC-Challenge")
+arc_data = datasets.load_dataset("allenai/ai2_arc", "ARC-Easy")
 
 prep_data(arc_data["train"], "./data_train.json")
 # prep_data(arc_data["test"], "./data_test.json")

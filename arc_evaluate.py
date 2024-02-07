@@ -112,6 +112,13 @@ def evaluate(subject: str,
         )
 
         outputs = model.forward(input_args)
+        avg = list(0 for _ in range(model.layers_[
+                   0].ffn_.moes_["arc_mixlora"].experts_))
+        for layer in model.layers_:
+            for idx, val in enumerate(layer.ffn_.moes_["arc_mixlora"].profiler_):
+                avg[idx] += val
+        for idx, val in enumerate(avg):
+            print(f"Expert {idx}, Load = {val/32}")
 
         labels = torch.tensor(
             batch_labels[start_pos:end_pos], dtype=torch.long, device=model.device_)
@@ -153,7 +160,7 @@ def do_evaluate(model_name: str,
         logging.info(f"Loading adapter {name}")
         model.load_adapter_weight(name)
 
-    results = evaluate("ARC-Challenge", tokenizer, model,
+    results = evaluate("ARC-Easy", tokenizer, model,
                        adapter_names, batch_size, model.max_seq_len_)
 
     for name, result in results.items():

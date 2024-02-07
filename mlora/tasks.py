@@ -232,6 +232,13 @@ def evaluate(model: LLMModel,
             break
 
         outputs = model.forward(input_args)
+        avg = list(0 for _ in range(model.layers_[
+                   0].ffn_.moes_["rte_lora_1"].experts_))
+        for layer in model.layers_:
+            for idx, val in enumerate(layer.ffn_.moes_["rte_lora_1"].profiler_):
+                avg[idx] += val
+        for idx, val in enumerate(avg):
+            print(f"Expert {idx}, Load = {val/32}")
 
         input_ids = torch.tensor(input_args.batch_tokens_, dtype=torch.long)
 

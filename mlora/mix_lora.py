@@ -58,6 +58,7 @@ class MixtralSparseMoe(torch.nn.Module):
         self.dropout_ = torch.nn.Dropout(
             config.dropout_rate_) if config.dropout_rate_ > 0 else None
         self.topk_ = config.top_k_
+        self.profiler_ = None
 
     def forward(self, expert_fn, hidden_states: torch.Tensor) -> Tuple:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
@@ -68,6 +69,15 @@ class MixtralSparseMoe(torch.nn.Module):
         routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
         routing_weights, selected_experts = torch.topk(
             routing_weights, self.topk_, dim=-1)
+        self.profiler_ = list(0 for _ in range(self.experts_))
+
+        for selected in selected_experts.tolist():
+            for idx in selected:
+                self.profiler_[idx] += 1
+
+        self.profiler_ = list(
+            tokens / hidden_states.shape[0] for tokens in self.profiler_)
+
         routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
         # we cast back to the input dtype
         routing_weights = routing_weights.to(hidden_states.dtype)
