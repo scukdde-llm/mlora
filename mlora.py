@@ -149,7 +149,7 @@ def init_adapter_config(config: Dict[str, any],
                     raise ValueError("loading adapter with unmatched base model." +
                                      f" current is {llm_model.name_or_path_}, provided {base_model_name_or_path}")
             lora_weight = torch.load(
-                adapter_file_path, map_location=args.device)
+                adapter_file_path, map_location="cpu")
         elif os.path.isfile(adapter_file_path):
             if args.overwrite:
                 logging.warning(

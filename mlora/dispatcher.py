@@ -7,6 +7,7 @@ import math
 import random
 import logging
 import datasets
+from enum import Enum
 from dataclasses import dataclass
 from typing import Dict, List, Union, Callable
 
@@ -49,6 +50,14 @@ def load_dataset(data_path: str):
             return datasets.load_dataset(data_path)
 
 
+class TrainTaskStatus(Enum):
+    ERROR = -1
+    READY = 0
+    BUSY = 1
+    IDLE = 2
+    DONE = 3
+
+
 class TrainTask():
     tokenizer_: Tokenizer = None
 
@@ -56,6 +65,9 @@ class TrainTask():
     data_path_: str = ""
     test_data_path_: str = ""
     dataload_function_: Callable = None
+
+    # train status
+    status_: TrainTaskStatus = TrainTaskStatus.READY
 
     # the token list for train and test
     val_set_size: Union[int, float] = -1
@@ -212,6 +224,8 @@ class Dispatcher():
     # train task in event
     train_task_in_event_: Event = None
     train_task_out_event_: Event = None
+    train_task_pause_event_: Event = None
+    train_task_resume_event_: Event = None
 
     # the number of max candidate training lora model
     # can chose train data from this dataset
@@ -233,6 +247,8 @@ class Dispatcher():
 
         self.train_task_in_event_ = Event()
         self.train_task_out_event_ = Event()
+        self.train_task_pause_event_ = Event()
+        self.train_task_resume_event_ = Event()
 
         self.train_lora_candidate_num_ = config["train_lora_candidate_num"]
         self.train_lora_simultaneously_num_ = config["train_lora_simultaneously_num"]
@@ -311,6 +327,14 @@ class Dispatcher():
 
     # ready task -> running task
     def __dispatch_task_in(self):
+        for task in self.done_train_task_:
+            if task.status_ == TrainTaskStatus.DONE:
+                continue
+            if task.status_ == TrainTaskStatus.BUSY:
+                self.train_task_pause_event_.activate(task=task)
+            task.status_ = TrainTaskStatus.DONE
+            self.train_task_out_event_.activate(task=task)
+
         assert len(
             self.running_train_task_) <= self.train_lora_candidate_num_
         if len(self.running_train_task_) == self.train_lora_candidate_num_:
@@ -321,6 +345,7 @@ class Dispatcher():
             task = self.ready_train_task_.pop(0)
             # to lazy load data
             task.load_data()
+            task.status_ = TrainTaskStatus.IDLE
             self.train_task_in_event_.activate(task=task)
             self.running_train_task_.append(task)
 
@@ -328,7 +353,6 @@ class Dispatcher():
     def __dispatch_task_out(self):
         for task in self.running_train_task_:
             if task.is_train_done():
-                self.train_task_out_event_.activate(task=task)
                 self.done_train_task_.append(task)
 
         self.running_train_task_ = [
@@ -397,6 +421,16 @@ class Dispatcher():
             adapter_start_idx = adapter_end_idx
 
         self.__dispatch_task_out()
+
+        for task in self.running_train_task_:
+            if task.adapter_name_ in all_train_data:
+                if task.status_ == TrainTaskStatus.IDLE:
+                    self.train_task_resume_event_.activate(task=task)
+                task.status_ = TrainTaskStatus.BUSY
+            else:
+                if task.status_ == TrainTaskStatus.BUSY:
+                    self.train_task_resume_event_.activate(task=task)
+                task.status_ = TrainTaskStatus.IDLE
 
         return batch_labels, MultiLoraBatchData(lora_batch_data_config_=lora_batch_data_config,
                                                 batch_tokens_=batch_tokens,

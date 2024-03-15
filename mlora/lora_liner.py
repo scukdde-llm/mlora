@@ -30,8 +30,8 @@ class Lora(torch.nn.Module):
 
     def forward(self, data: torch.Tensor) -> torch.Tensor:
         data_ = F.dropout(data.to(self.lora_a_.dtype), self.dropout_)
-        data_ @= self.lora_a_.transpose(0, 1)
-        data_ @= self.lora_b_.transpose(0, 1)
+        data_ @= self.lora_a_.to(device=data.device).transpose(0, 1)
+        data_ @= self.lora_b_.to(device=data.device).transpose(0, 1)
         data_ *= self.scaling_
         return data_.to(data.dtype)
 
@@ -71,19 +71,19 @@ class Linear(torch.nn.Module):
 
         if lora_a is not None:
             self.loras_[adapter_name].lora_a_ = lora_a.to(
-                device=self.device_).to(torch.float32).requires_grad_(True)
+                device="cpu", dtype=torch.float32).pin_memory().requires_grad_(True)
         else:
             self.loras_[adapter_name].lora_a_ = torch.zeros(
-                size=(r, in_dim), device=self.device_, requires_grad=True, dtype=torch.float32)
+                size=(r, in_dim), device="cpu", requires_grad=True, dtype=torch.float32, pin_memory=True)
             torch.nn.init.kaiming_normal_(
                 self.loras_[adapter_name].lora_a_, a=math.sqrt(5))
 
         if lora_b is not None:
             self.loras_[adapter_name].lora_b_ = lora_b.to(
-                device=self.device_).to(torch.float32).requires_grad_(True)
+                device="cpu", dtype=torch.float32).pin_memory().requires_grad_(True)
         else:
             self.loras_[adapter_name].lora_b_ = torch.zeros(
-                size=(out_dim, r), device=self.device_, requires_grad=True, dtype=torch.float32)
+                size=(out_dim, r), device="cpu", requires_grad=True, dtype=torch.float32, pin_memory=True)
 
         self.enable_lora_ = True
 

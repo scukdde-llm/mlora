@@ -344,7 +344,7 @@ class ChatGLMModel(LLMModel):
             lora_config = lora_config_factory(json.load(fp))
         lora_config.adapter_name_ = adapter_name
         lora_weight = torch.load(
-            path + os.sep + "adapter_model.bin", map_location=self.device_)
+            path + os.sep + "adapter_model.bin", map_location="cpu")
         self.init_lora_layer_weight(lora_config, lora_weight)
         return adapter_name
 

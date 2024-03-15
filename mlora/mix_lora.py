@@ -44,7 +44,7 @@ class MixtralSparseMoe(torch.nn.Module):
 
         self.adapter_name_: str = config.adapter_name_
         self.gate_ = torch.nn.Linear(
-            in_features, config.num_experts_, bias=False, device=config.device_, dtype=torch.float32)
+            in_features, config.num_experts_, bias=False, device="cpu", dtype=torch.float32)
         self.act_ = ACT2FN[config.act_fn_]
         self.experts_ = config.num_experts_
         self.dropout_ = torch.nn.Dropout(
@@ -55,7 +55,8 @@ class MixtralSparseMoe(torch.nn.Module):
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
         # router_logits: (batch * sequence_length, n_experts)
-        router_logits = self.gate_(hidden_states.to(torch.float32))
+        router_logits = self.gate_.to(hidden_states.device).forward(
+            hidden_states.to(torch.float32))
 
         routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
         routing_weights, selected_experts = torch.topk(
@@ -169,7 +170,7 @@ class SwitchSparseMoe(torch.nn.Module):
         self.adapter_name_: str = config.adapter_name_
         self.dtype_: torch.dtype = torch.float32
         self.gate_ = torch.nn.Linear(
-            in_features, config.num_experts_, bias=False, device=config.device_, dtype=self.dtype_)
+            in_features, config.num_experts_, bias=False, device="cpu", dtype=self.dtype_)
         self.act_ = ACT2FN[config.act_fn_]
         self.experts_: int = config.num_experts_
         self.dropout_ = torch.nn.Dropout(
@@ -187,7 +188,7 @@ class SwitchSparseMoe(torch.nn.Module):
                 1.0 - self.jitter_noise_, 1.0 + self.jitter_noise_)
 
         # Apply Softmax
-        router_logits = self.gate_(data)
+        router_logits = self.gate_.to(data.device).forward(data)
         router_probs = F.softmax(
             router_logits, dim=-1, dtype=self.dtype_).to(input_dtype)
 
