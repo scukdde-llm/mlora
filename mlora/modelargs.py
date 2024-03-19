@@ -152,7 +152,9 @@ class MixConfig(LoraConfig):
     expert_dropout_: float = None
     # router config
     router_aux_loss_coef_: float = None
+    router_init_range_: float = None
     routing_strategy_: str = None
+    router_bias_: bool = False
     ffn_dropout_: float = None
     num_experts_: int = None
     act_fn_: str = None
@@ -171,8 +173,11 @@ class MixConfig(LoraConfig):
                           float) and self.expert_dropout_ >= 0
         assert isinstance(self.router_aux_loss_coef_,
                           float) and self.router_aux_loss_coef_ >= 0
+        assert isinstance(self.router_init_range_,
+                          float) and self.router_init_range_ >= 0
         assert isinstance(self.routing_strategy_,
                           str) and self.routing_strategy_ in available_routing_strategies
+        assert isinstance(self.router_bias_, bool)
         assert isinstance(self.ffn_dropout_,
                           float) and self.ffn_dropout_ >= 0
         assert isinstance(self.num_experts_, int) and self.num_experts_ > 0
@@ -196,7 +201,9 @@ class MixConfig(LoraConfig):
         self.expert_dropout_ = config.get("expert_dropout", self.lora_dropout_)
         self.router_aux_loss_coef_ = config.get(
             "router_aux_loss_coef", 0.001)  # for training
+        self.router_init_range_ = config.get("router_init_range", 0.02)
         self.routing_strategy_ = config["routing_strategy"]
+        self.router_bias_ = config.get("router_bias", False)
         self.ffn_dropout_ = config.get("ffn_dropout", 0.0)
         self.num_experts_ = config["num_experts"]
         # silu for mixtral or gelu_new for switch transformers
@@ -220,6 +227,7 @@ class MixConfig(LoraConfig):
         config["expert_alpha"] = self.expert_alpha_
         config["expert_dropout"] = self.expert_dropout_
         config["routing_strategy"] = self.routing_strategy_
+        config["router_bias"] = self.router_bias_
         config["num_experts"] = self.num_experts_
         config["act_fn"] = self.act_fn_
         if self.routing_strategy_ == "mixtral":

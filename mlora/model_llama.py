@@ -251,10 +251,17 @@ class Transformer(torch.nn.Module):
 
         if isinstance(config, MixConfig):
             # Inject LoRA configs into FFN layer
-            gate_layer_name = f"mixlora.layers.{self.layer_id_}.gate.weight"
+            gate_weight_name = f"mixlora.layers.{self.layer_id_}.gate.weight"
+            gate_bias_name = f"mixlora.layers.{self.layer_id_}.gate.bias"
+            if weight is None:
+                gate_weight = None
+                gate_bias = None
+            else:
+                gate_weight = weight[gate_weight_name]
+                gate_bias = weight[gate_bias_name] if config.router_bias_ else None
+
             self.ffn_.init_moe_weight(in_features=self.n_heads_ * self.head_dim_,
-                                      config=config,
-                                      gate=weight if weight is None else weight[gate_layer_name])
+                                      config=config, gate_weight=gate_weight, gate_bias=gate_bias)
 
             moe_layer_name_list = ["w1_proj", "w2_proj", "w3_proj"]
             init_moe = True
@@ -631,8 +638,11 @@ class LlamaModel(LLMModel):
         for transformer_layer in self.layers_:
             for adapter_name, lora_config in self.adapter_configs_.items():
                 if adapter_name in transformer_layer.ffn_.moes_:
-                    train_paramas[adapter_name].append(transformer_layer.ffn_.moes_[
-                                                       adapter_name].gate_.weight)
+                    gate: torch.nn.Linear = transformer_layer.ffn_.moes_[
+                        adapter_name].gate_
+                    train_paramas[adapter_name].append(gate.weight)
+                    if gate.bias is not None:
+                        train_paramas[adapter_name].append(gate.bias)
 
                 lora_layer_list = [transformer_layer.wq_.loras_, transformer_layer.wk_.loras_,
                                    transformer_layer.wv_.loras_, transformer_layer.wo_.loras_,
@@ -701,9 +711,13 @@ class LlamaModel(LLMModel):
                                 + f"{lora_layer_name_list[idx]}.lora_B.weight"
                             ] = lora_layer.loras_[moe_lora_name].lora_b_.weight
 
-                    lora_weight_dict[
-                        moe_layer_prefix_name + "gate.weight"
-                    ] = transformer_layer.ffn_.moes_[lora_name].gate_.weight
+                    gate: torch.nn.Linear = transformer_layer.ffn_.moes_[
+                        lora_name].gate_
+                    lora_weight_dict[moe_layer_prefix_name +
+                                     "gate.weight"] = gate.weight
+                    if gate.bias is not None:
+                        lora_weight_dict[moe_layer_prefix_name +
+                                         "gate.bias"] = gate.bias
 
         return lora_weight_dict
 
