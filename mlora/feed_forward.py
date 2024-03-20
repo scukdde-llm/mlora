@@ -57,12 +57,14 @@ class FeedForward(torch.nn.Module):
                         gate_weight: Optional[torch.Tensor] = None, gate_bias: Optional[torch.Tensor] = None):
         self.moes_[config.adapter_name_] = moe_layer_factory(
             in_features, config)
+        gate: torch.nn.Linear = self.moes_[config.adapter_name_].gate_
         if gate_weight is None:
-            torch.nn.init.normal_(self.moes_[
-                                  config.adapter_name_].gate_.weight, mean=0.0, std=config.router_init_range_)
+            torch.nn.init.normal_(gate.weight, mean=0.0,
+                                  std=config.router_init_range_)
+            if config.router_bias_:
+                torch.nn.init.zeros_(gate.bias)
         else:
             with torch.no_grad():
-                gate: torch.nn.Linear = self.moes_[config.adapter_name_].gate_
                 gate.weight.copy_(gate_weight)
                 if config.router_bias_:
                     assert gate_bias is not None
