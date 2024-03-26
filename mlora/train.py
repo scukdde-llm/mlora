@@ -127,6 +127,8 @@ def train(dispatcher: Dispatcher,
 
     train_paramas = model.get_train_paramas()
 
+    max_memory = 0
+
     step_cnt = 0
     while not dispatcher.check_task_done():
         labels, input = dispatcher.get_train_data()
@@ -157,6 +159,9 @@ def train(dispatcher: Dispatcher,
         for output in outputs:
             config = config_dict[output.adapter_name]
             config.step()
+
+            max_memory = max(max_memory, torch.cuda.max_memory_allocated())
+            logging.info(f"Max memory: {max_memory}")
 
             if config.accumulation_step_cnt_ % save_step == 0:
                 save_adapter_weight(model, config, save_dir, f"{step_cnt}")

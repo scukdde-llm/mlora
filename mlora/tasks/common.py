@@ -81,15 +81,19 @@ class CasualTask(BasicTask):
                      is_train: bool = True) -> List[DataClass]:
         data = self.dataset_["train" if is_train else "test"]
         ret: List[DataClass] = []
+        sum_tokens = 0
         for idx, data_point in enumerate(data):
             prompt = self.prompter_.generate_prompt(
                 data_point["instruction"],
                 data_point.get("input", None),
                 data_point.get("output", None))
             tokens = tokenizer.encode(data=prompt, bos=True, eos=False)
+            sum_tokens += len(tokens)
             ret.append(DataClass(tokens_=tokens, labels_=None))
             if idx % 10000 == 0:
                 logging.info(f"Encode text data: {idx}/{len(data)}")
+
+        logging.info(f"All training tokens: {sum_tokens}")
 
         return ret
 
