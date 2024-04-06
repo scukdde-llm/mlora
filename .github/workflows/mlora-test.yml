@@ -1,0 +1,28 @@
+name: Test LLM Models
+
+on: [push, pull_request]
+
+jobs:
+  test-lora:
+    runs-on: self-hosted
+    container:
+      image: nvcr.io/nvidia/pytorch:24.03-py3
+      volumes:
+        - /home/lab/models:/host_models/
+      options: --gpus 2
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: |
+          pip3 install torch==2.1.2
+          pip3 install -r requirements.txt
+      - name: finetune lora
+        run: |
+          python mlora.py --base_model /host_models/TinyLlama-1.1B-intermediate-step-1431k-3T --config ./config/dummy.json --bf16
+      - name: inference with lora
+        run: |
+          python generate.py --base_model /host_models/TinyLlama-1.1B-intermediate-step-1431k-3T --lora_weights "./lora_0" --instruction "What is m-LoRA?"
