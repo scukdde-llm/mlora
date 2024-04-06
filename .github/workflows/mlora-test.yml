@@ -6,7 +6,7 @@ jobs:
   test-lora:
     runs-on: self-hosted
     container:
-      image: nvcr.io/nvidia/pytorch:24.03-py3
+      image: mlora:0.2.1
       volumes:
         - /home/lab/models:/host_models/
       options: --gpus 1
