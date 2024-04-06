@@ -6,7 +6,7 @@ jobs:
   test-lora:
     runs-on: self-hosted
     container:
-      image: mlora:0.2.1
+      image: mikecovlee/mlora:0.2.1
       volumes:
         - /home/lab/models:/host_models/
       options: --gpus 1
