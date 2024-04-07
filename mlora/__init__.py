@@ -2,7 +2,7 @@ from mlora.backends import get_backend
 from mlora.prompter import Prompter
 from mlora.tokenizer import Tokenizer
 from mlora.model import LLMModel
-from mlora.model_llama import LlamaModel
+from mlora.transformer import LlamaModel
 from mlora.modelargs import DataClass, LLMModelArgs, MultiLoraBatchData, LoraBatchDataConfig
 from mlora.modelargs import LoraConfig, MixConfig, lora_config_factory
 from mlora.dispatcher import TrainTask, Dispatcher
