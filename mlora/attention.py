@@ -3,7 +3,7 @@ from mlora.modelargs import LLMModelArgs, MultiLoraBatchData
 from mlora.backends import _backend
 from mlora.utils import _is_package_available
 
-from typing import Tuple, Optional
+from typing import Dict, Tuple, Optional
 
 import torch
 import torch.nn.functional as F
@@ -110,6 +110,14 @@ class LlamaAttention(torch.nn.Module):
         self.head_dim_ = args.dim_ // args.n_heads_
         self.dtype_ = args.dtype_
         self.is_causal_ = True
+
+    def state_dict(self) -> Dict[str, Linear]:
+        return {
+            "q_proj": self.wq_,
+            "k_proj": self.wk_,
+            "v_proj": self.wv_,
+            "o_proj": self.wo_,
+        }
 
     def forward(self,
                 hidden_states: torch.Tensor,
@@ -562,7 +570,7 @@ FlashAttentionClass = {
 }
 
 
-def llama_attention_factory(model_type: str, args: LLMModelArgs, **kwargs):
+def attention_factory(model_type: str, args: LLMModelArgs, **kwargs):
     if args.attn_implementation_ == "flash_attn":
         assert _is_package_available("flash_attn")
         return FlashAttentionClass[model_type](args=args, **kwargs)

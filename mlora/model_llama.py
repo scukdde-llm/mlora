@@ -1,9 +1,9 @@
 from mlora.modelargs import LLMModelArgs, LLMModelOutput, MultiLoraBatchData
 from mlora.modelargs import Masks, LoraConfig, MixConfig, lora_config_factory
-from mlora.attention import LlamaAttention, llama_attention_factory
+from mlora.attention import LlamaAttention, attention_factory
 from mlora.checkpoint import CheckpointRecomputeFunction
 from mlora.model import LLMOutput, LLMModel
-from mlora.feed_forward import FeedForward
+from mlora.feed_forward import FeedForward, feedforward_factory
 from mlora.lora_linear import Linear
 from mlora.generate import GenerateConfig
 from mlora.mix_lora import router_loss_factory
@@ -199,12 +199,18 @@ class LlamaDecoderLayer(torch.nn.Module):
         self.norm_eps_ = args.norm_eps_
         self.dtype_ = args.dtype_
 
+    def state_dict(self) -> Dict[str, Linear]:
+        linear_layers = self.attn_.state_dict()
+        linear_layers.update(self.ffn_.state_dict())
+        return linear_layers
+
     def init_lora_layer_weight(self, config: LoraConfig, weight: Optional[Dict[str, torch.Tensor]]):
         target = config.target_modules_
-        linear_layer_list = [self.attn_.wk_, self.attn_.wq_, self.attn_.wv_,
-                             self.attn_.wo_, self.ffn_.w1_, self.ffn_.w2_, self.ffn_.w3_]
-        linear_layer_name_list = [
-            "k_proj", "q_proj", "v_proj", "o_proj", "w1_proj", "w2_proj", "w3_proj"]
+        linear_layer_list = []
+        linear_layer_name_list = []
+        for name, layer in self.state_dict().items():
+            linear_layer_list.append(layer)
+            linear_layer_name_list.append(name)
 
         if isinstance(config, MixConfig):
             # Inject LoRA configs into FFN layer
@@ -212,7 +218,7 @@ class LlamaDecoderLayer(torch.nn.Module):
             self.ffn_.init_moe_weight(in_features=self.dim_, config=config,
                                       gate=weight if weight is None else weight[gate_layer_name])
 
-            moe_layer_name_list = ["w1_proj", "w2_proj", "w3_proj"]
+            moe_layer_name_list = list(self.ffn_.state_dict().keys())
             init_moe = True
         else:
             moe_layer_name_list = []
@@ -531,7 +537,7 @@ class LlamaModel(LLMModel):
         for idx, layer in enumerate(llama_model.model.layers):
             model.layers_[idx].attn_norm_ = LlamaRMSNorm(
                 layer.input_layernorm.weight, model.norm_eps_)
-            model.layers_[idx].attn_ = llama_attention_factory(
+            model.layers_[idx].attn_ = attention_factory(
                 model_type=llama_model.config.model_type,
                 wq=Linear(layer.self_attn.q_proj, device=device),
                 wk=Linear(layer.self_attn.k_proj, device=device),
@@ -542,12 +548,8 @@ class LlamaModel(LLMModel):
             )
             model.layers_[idx].ffn_norm_ = LlamaRMSNorm(
                 layer.post_attention_layernorm.weight, model.norm_eps_)
-            model.layers_[idx].ffn_ = FeedForward(
-                w1=Linear(layer.mlp.gate_proj, device=device),
-                w2=Linear(layer.mlp.down_proj, device=device),
-                w3=Linear(layer.mlp.up_proj, device=device),
-                args=llama_args
-            )
+            model.layers_[idx].ffn_ = feedforward_factory(
+                layer.mlp, llama_args.device_)
 
         # convert to sequential module for use
         model.seq_module_ = model.sequential_module()
@@ -570,12 +572,12 @@ class LlamaModel(LLMModel):
             else:
                 layer_prefix_name = f"base_model.model.model.layers.{idx}.self_attn."
 
-            lora_layer_list = [transformer_layer.attn_.wq_, transformer_layer.attn_.wk_,
-                               transformer_layer.attn_.wv_, transformer_layer.attn_.wo_,
-                               transformer_layer.ffn_.w1_, transformer_layer.ffn_.w2_,
-                               transformer_layer.ffn_.w3_]
-            lora_layer_name_list = [
-                "q_proj", "k_proj", "v_proj", "o_proj", "w1_proj", "w2_proj", "w3_proj"]
+            lora_layer_list = []
+            lora_layer_name_list = []
+            for name, layer in transformer_layer.state_dict().items():
+                lora_layer_list.append(layer)
+                lora_layer_name_list.append(name)
+
             for idx, lora_layer in enumerate(lora_layer_list):
                 if lora_name in lora_layer.loras_:
                     prefix_name = layer_prefix_name + lora_layer_name_list[idx]

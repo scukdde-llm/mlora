@@ -134,6 +134,9 @@ class LoraConfig:
             "w1_proj": False,
             "w2_proj": False,
             "w3_proj": False,
+            # Phi names
+            "fc1_proj": False,
+            "fc2_proj": False,
         }
         if isinstance(config["target_modules"], List):
             for target in config["target_modules"]:
