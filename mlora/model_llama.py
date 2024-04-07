@@ -1,6 +1,6 @@
 from mlora.modelargs import LLMModelArgs, LLMModelOutput, MultiLoraBatchData
 from mlora.modelargs import Masks, LoraConfig, MixConfig, lora_config_factory
-from mlora.attention import LlamaAttention, attention_factory
+from mlora.llama_attention import LlamaAttention, attention_factory
 from mlora.checkpoint import CheckpointRecomputeFunction
 from mlora.model import LLMOutput, LLMModel
 from mlora.feed_forward import FeedForward, feedforward_factory
