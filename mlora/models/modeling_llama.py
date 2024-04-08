@@ -13,6 +13,7 @@ from mlora.common.attention import (
     repeat_kv,
 )
 from mlora.backends import _backend, get_backend
+from mlora.utils import copy_parameters
 
 from typing import Tuple, Dict, List, Optional
 from transformers.activations import ACT2FN
@@ -511,8 +512,7 @@ class LlamaForCausalLM(LLMForCausalLM):
             llm_model.model.embed_tokens.weight, llm_args.pad_token_id_)
         model.norm_ = LlamaRMSNorm(
             llm_model.model.norm.weight, llm_args.rms_norm_eps_)
-        with torch.no_grad():
-            model.lm_head_.weight.copy_(llm_model.lm_head.weight)
+        copy_parameters(llm_model.lm_head, model.lm_head_)
 
         for idx, layer in enumerate(llm_model.model.layers):
             decoder = LlamaDecoderLayer()
