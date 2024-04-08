@@ -4,12 +4,14 @@ from mlora.common.modelargs import LLMModelArgs, MultiLoraBatchData
 from mlora.common.feed_forward import FeedForward
 from mlora.common.lora_linear import Linear
 from mlora.common.attention import (
-    precompute_rope_angle,
-    repeat_kv,
-    apply_rotary_emb,
     scaled_dot_product_attention,
+    precompute_rope_angle,
+    _flash_attn_available,
+    apply_rotary_emb,
+    get_unpad_data,
+    repeat_kv,
 )
-from mlora.backends import get_backend
+from mlora.backends import _backend, get_backend
 from mlora.utils import copy_parameters
 
 from typing import Tuple, Dict, List, Optional
@@ -21,6 +23,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import transformers.models.phi.modeling_phi as modeling_phi
+
+if _flash_attn_available:
+    from flash_attn import flash_attn_func, flash_attn_varlen_func
+    from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
 
 
 @dataclass
@@ -125,14 +131,168 @@ class PhiAttention(LLMAttention):
             xq.to(torch.float32), xk.to(torch.float32), xv, attention_mask)
 
         attention_score = attention_score.reshape(batch_size, max_seq_len, -1)
+        attention_score = self.dense_.forward(attention_score, input_args)
 
-        return self.dense_.forward(attention_score, input_args)
+        return attention_score
+
+
+class PhiFlashAttention2(PhiAttention):
+    def __init__(self, q_proj: nn.Module, k_proj: nn.Module, v_proj: nn.Module, dense: nn.Module,
+                 layer_idx: int, args: PhiConfig):
+        assert _flash_attn_available, "Flash Attention is not available"
+        super().__init__(q_proj, k_proj, v_proj, dense, layer_idx, args)
+
+    def _flash_attention_forward(
+        self, query_states, key_states, value_states, attention_mask, query_length, dropout=0.0, softmax_scale=None
+    ):
+
+        # Contains at least one padding token in the sequence
+        if attention_mask is not None:
+            batch_size = query_states.shape[0]
+            query_states, key_states, value_states, indices_q, cu_seq_lens, max_seq_lens = self._upad_input(
+                query_states, key_states, value_states, attention_mask, query_length
+            )
+
+            cu_seqlens_q, cu_seqlens_k = cu_seq_lens
+            max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
+
+            attn_output_unpad = flash_attn_varlen_func(
+                query_states,
+                key_states,
+                value_states,
+                cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_k=cu_seqlens_k,
+                max_seqlen_q=max_seqlen_in_batch_q,
+                max_seqlen_k=max_seqlen_in_batch_k,
+                dropout_p=dropout,
+                softmax_scale=softmax_scale,
+                causal=self.is_causal_,
+            )
+
+            attn_output = pad_input(
+                attn_output_unpad, indices_q, batch_size, query_length)
+        else:
+            attn_output = flash_attn_func(
+                query_states, key_states, value_states, dropout, softmax_scale=softmax_scale, causal=self.is_causal_
+            )
+
+        return attn_output
+
+    def _upad_input(self, query_layer, key_layer, value_layer, attention_mask, query_length):
+        indices_k, cu_seqlens_k, max_seqlen_in_batch_k = get_unpad_data(
+            attention_mask)
+        batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape
+
+        key_layer = index_first_axis(
+            key_layer.reshape(batch_size * kv_seq_len,
+                              num_key_value_heads, head_dim), indices_k
+        )
+        value_layer = index_first_axis(
+            value_layer.reshape(batch_size * kv_seq_len,
+                                num_key_value_heads, head_dim), indices_k
+        )
+        if query_length == kv_seq_len:
+            query_layer = index_first_axis(
+                query_layer.reshape(batch_size * kv_seq_len,
+                                    self.num_heads, head_dim), indices_k
+            )
+            cu_seqlens_q = cu_seqlens_k
+            max_seqlen_in_batch_q = max_seqlen_in_batch_k
+            indices_q = indices_k
+        elif query_length == 1:
+            max_seqlen_in_batch_q = 1
+            cu_seqlens_q = torch.arange(
+                batch_size + 1, dtype=torch.int32, device=query_layer.device
+            )  # There is a memcpy here, that is very bad.
+            indices_q = cu_seqlens_q[:-1]
+            query_layer = query_layer.squeeze(1)
+        else:
+            # The -q_len: slice assumes left padding.
+            attention_mask = attention_mask[:, -query_length:]
+            query_layer, indices_q, cu_seqlens_q, max_seqlen_in_batch_q = unpad_input(
+                query_layer, attention_mask)
+
+        return (
+            query_layer,
+            key_layer,
+            value_layer,
+            indices_q,
+            (cu_seqlens_q, cu_seqlens_k),
+            (max_seqlen_in_batch_q, max_seqlen_in_batch_k),
+        )
+
+    def forward(self,
+                hidden_states: torch.Tensor,
+                input_args: MultiLoraBatchData,
+                attention_mask: Optional[torch.Tensor] = None):
+        batch_size, max_seq_len, _ = hidden_states.shape
+
+        xq = self.wq_.forward(hidden_states, input_args)
+        xk = self.wk_.forward(hidden_states, input_args)
+        xv = self.wv_.forward(hidden_states, input_args)
+
+        xq = self.q_layernorm_(xq)
+        xk = self.k_layernorm_(xk)
+
+        # conver shape to multi head
+        xq = xq.view(batch_size, max_seq_len, self.n_heads_,
+                     self.head_dim_).transpose(1, 2)
+        xk = xk.view(batch_size, max_seq_len, self.n_kv_heads_,
+                     self.head_dim_).transpose(1, 2)
+        xv = xv.view(batch_size, max_seq_len, self.n_kv_heads_,
+                     self.head_dim_).transpose(1, 2)
+
+        # partial rotary embedding
+        cos = self.cos_[:max_seq_len].to(xq.dtype)
+        sin = self.sin_[:max_seq_len].to(xq.dtype)
+        q_rot, q_pass = (
+            xq[..., : self.rotary_emb_dim_],
+            xq[..., self.rotary_emb_dim_:],
+        )
+        k_rot, k_pass = (
+            xk[..., : self.rotary_emb_dim_],
+            xk[..., self.rotary_emb_dim_:],
+        )
+        # [batch_size, seq_length, num_heads, head_dim // partial_rotary_factor]
+        q_rot, k_rot = apply_rotary_emb(q_rot, k_rot, cos, sin)
+
+        # [batch_size, seq_length, num_heads, head_dim]
+        xq = torch.cat((q_rot, q_pass), dim=-1)
+        xk = torch.cat((k_rot, k_pass), dim=-1)
+
+        input_dtype = xq.dtype
+        if input_dtype == torch.float32:
+            if _backend.is_bf16_supported():
+                target_dtype = torch.bfloat16
+            else:
+                target_dtype = torch.float16
+            xq = xq.to(target_dtype)
+            xk = xk.to(target_dtype)
+            xv = xv.to(target_dtype)
+
+        xq = xq.transpose(1, 2)
+        xk = xk.transpose(1, 2)
+        xv = xv.transpose(1, 2)
+
+        attn_output = self._flash_attention_forward(
+            xq,
+            xk,
+            xv,
+            attention_mask,
+            max_seq_len,
+        ).to(input_dtype)
+
+        attn_output = attn_output.reshape(
+            batch_size, max_seq_len, self.dim_).contiguous()
+        attn_output = self.dense_.forward(attn_output, input_args)
+
+        return attn_output
 
 
 PHI_ATTENTION_CLASSES = {
     "eager": PhiAttention,
     "xformers": None,
-    "flash_attn": None,
+    "flash_attn": PhiFlashAttention2,
 }
 
 
