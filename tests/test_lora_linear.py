@@ -1,12 +1,7 @@
-import unittest
-import torch
-import sys
-import os
-CURRENT_DIR = os.path.split(os.path.abspath(__file__))[0]
-config_path = CURRENT_DIR.rsplit('/', 1)[0]
-sys.path.append(config_path)
 from mlora.lora_linear import MultiLoraBatchData, LoraConfig, Linear
 from mlora.modelargs import LoraBatchDataConfig
+import unittest
+import torch
 
 
 class TestLoraLinear(unittest.TestCase):

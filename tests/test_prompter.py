@@ -1,15 +1,15 @@
 from mlora.prompter import Prompter
 import unittest
-import sys
-import os
-CURRENT_DIR = os.path.split(os.path.abspath(__file__))[0]
-config_path = CURRENT_DIR.rsplit('/', 1)[0]
-sys.path.append(config_path)
 
 
 class TestPrompter(unittest.TestCase):
     def setUp(self):
-        self.prompter = Prompter(config_path + r"/template/template_demo.json")
+        template = {"description": "A demo template to experiment with.",
+                    "prompt_input": "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Output:\n",
+                    "prompt_no_input": "### Instruction:\n{instruction}\n\n### Output:\n",
+                    "response_split": "### Output:"
+                    }
+        self.prompter = Prompter(template=template)
 
     def test_generate_prompt_with_input(self):
         mock_test = "### Instruction:\nplease enter a sentence\n\n### Input:\nhello world!\n\n### Output:\n"

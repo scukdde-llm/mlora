@@ -2,11 +2,6 @@ from unittest.mock import MagicMock, patch
 from mlora import Tokenizer
 from transformers import PreTrainedTokenizer
 import unittest
-import sys
-import os
-CURRENT_DIR = os.path.split(os.path.abspath(__file__))[0]
-config_path = CURRENT_DIR.rsplit('/', 1)[0]
-sys.path.append(config_path)
 
 
 class TestTokenizer(unittest.TestCase):

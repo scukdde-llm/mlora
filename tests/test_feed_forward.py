@@ -2,11 +2,6 @@ from mlora.feed_forward import FeedForward, LLMModelArgs, Linear
 from unittest.mock import MagicMock, patch
 import unittest
 import torch
-import sys
-import os
-CURRENT_DIR = os.path.split(os.path.abspath(__file__))[0]
-config_path = CURRENT_DIR.rsplit('/', 1)[0]
-sys.path.append(config_path)
 
 
 class TestFeedForward(unittest.TestCase):
