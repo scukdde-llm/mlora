@@ -1,8 +1,14 @@
 import importlib.metadata
 import importlib.util
 import logging
+import torch
 
 from typing import Tuple, Union
+
+
+def copy_parameters(source: torch.nn.Module, dest: torch.nn.Module):
+    dest.load_state_dict(source.state_dict())
+    dest.requires_grad_(False)
 
 
 def setup_logging(log_level: str = "WARN", log_file: str = None):

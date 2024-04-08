@@ -136,6 +136,7 @@ class LoraConfig:
             "w2_proj": False,
             "w3_proj": False,
             # Phi names
+            "dense": False,
             "fc1_proj": False,
             "fc2_proj": False,
         }

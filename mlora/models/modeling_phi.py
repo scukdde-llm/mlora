@@ -10,6 +10,7 @@ from mlora.common.attention import (
     scaled_dot_product_attention,
 )
 from mlora.backends import get_backend
+from mlora.utils import copy_parameters
 
 from typing import Tuple, Dict, List, Optional
 from transformers.activations import ACT2FN
@@ -18,6 +19,7 @@ from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import transformers.models.phi.modeling_phi as modeling_phi
 
 
@@ -174,14 +176,14 @@ class PhiMLP(LLMFeedForward):
 
 
 class PhiDecoderLayer(LLMDecoder):
-    def __init__(self, self_attn: LLMAttention, mlp: FeedForward, args: LLMModelArgs) -> None:
+    def __init__(self, self_attn: LLMAttention, mlp: FeedForward, args: PhiConfig) -> None:
         super().__init__()
         self.layer_id_: int = self_attn.layer_id_
         self.self_attn_ = self_attn
         self.mlp_ = mlp
         self.input_layernorm_ = nn.LayerNorm(
             args.dim_, eps=args.layer_norm_eps_, dtype=args.dtype_, device=args.device_)
-        self.resid_dropout_ = nn.Dropout(args.resid_pdrop_)
+        self.resid_pdrop_ = args.resid_pdrop_
 
     def state_dict(self) -> Dict[str, torch.nn.Module]:
         linear_layers = self.self_attn_.state_dict()
@@ -198,11 +200,13 @@ class PhiDecoderLayer(LLMDecoder):
         # Self Attention
         attn_outputs = self.self_attn_.forward(
             hidden_states, input_args, attention_mask)
-        attn_outputs = self.resid_dropout_(attn_outputs)
+        attn_outputs = F.dropout(
+            attn_outputs, self.resid_pdrop_, not input_args.inference_mode_)
         # Fully Connected
         feed_forward_outputs = self.mlp_.forward(
             hidden_states, input_args, router_logits)
-        feed_forward_outputs = self.resid_dropout_(feed_forward_outputs)
+        feed_forward_outputs = F.dropout(
+            feed_forward_outputs, self.resid_pdrop_, not input_args.inference_mode_)
         hidden_states = attn_outputs + feed_forward_outputs + residual
 
         return hidden_states
@@ -324,12 +328,12 @@ class PhiForCausalLM(LLMForCausalLM):
 
         model = PhiForCausalLM(llm_args)
         llm_model.requires_grad_(False)
-        with torch.no_grad():
-            model.embed_tokens_.embed_tokens.weight.copy_(
-                llm_model.model.embed_tokens.weight)
-            model.final_layernorm_.layernorm_.weight.copy_(
-                llm_model.model.final_layernorm.weight)
-            model.lm_head_.weight.copy_(llm_model.lm_head.weight)
+        copy_parameters(llm_model.model.embed_tokens,
+                        model.embed_tokens_.embed_tokens)
+        copy_parameters(llm_model.model.final_layernorm,
+                        model.final_layernorm_.layernorm_)
+        copy_parameters(llm_model.lm_head,
+                        model.lm_head_)
 
         for idx, layer in enumerate(llm_model.model.layers):
             decoder = PhiDecoderLayer(
@@ -348,9 +352,7 @@ class PhiForCausalLM(LLMForCausalLM):
                 )),
                 llm_args,
             )
-            with torch.no_grad():
-                decoder.input_layernorm_.weight.copy_(
-                    layer.input_layernorm.weight)
+            copy_parameters(layer.input_layernorm, decoder.input_layernorm_)
             model.layers_.append(decoder)
 
         return model
