@@ -43,8 +43,7 @@ class FeedForward(torch.nn.Module):
                          router_logits: List[List] = None):
         batch_size, sequence_length, hidden_dim = data.shape
         final_hidden_states = torch.zeros(
-            (batch_size * sequence_length, hidden_dim), dtype=data.dtype, device=data.device
-        )
+            (batch_size, sequence_length, hidden_dim), dtype=data.dtype, device=data.device)
         for idx, lora_config in enumerate(input_args.lora_batch_data_config_):
             moe_name = lora_config.adapter_name_
             start_idx = lora_config.batch_start_idx_
