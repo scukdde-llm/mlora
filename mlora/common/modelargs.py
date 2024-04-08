@@ -42,10 +42,6 @@ class LLMModelArgs:
     pad_token_id_: int = -1
     rope_theta_: float = 10000.0
     max_seq_len_: int = 2048
-    # swa
-    use_sliding_window_: bool = False
-    max_window_layers_: int = None
-    sliding_window_: int = None
     # eager, xformers, flash_attn
     attn_implementation_: str = "eager"
     # data type

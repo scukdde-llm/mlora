@@ -1,6 +1,10 @@
 from mlora.common.modelargs import LLMModelArgs, MultiLoraBatchData
+from mlora.common.feed_forward import FeedForward
+from mlora.common.model import LLMDecoder
 from mlora.models.modeling_llama import (
+    LlamaConfig,
     LlamaAttention,
+    LlamaXformersAttention,
     LlamaMLP,
     LlamaDecoderLayer,
     LlamaRMSNorm,
@@ -15,22 +19,35 @@ from mlora.common.attention import (
     get_unpad_data,
     repeat_kv,
 )
-from mlora.backends import _backend
+from mlora.backends import _backend, get_backend
+from mlora.utils import copy_parameters
 
-from typing import Optional
+from collections import OrderedDict
+from dataclasses import dataclass
+from typing import List, Optional
 
 import torch
+import torch.nn as nn
+import transformers.models.qwen2.modeling_qwen2 as modeling_qwen2
+import transformers.models.mistral.modeling_mistral as modeling_mistral
 
 if _flash_attn_available:
     from flash_attn import flash_attn_func, flash_attn_varlen_func
     from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
 
 
+@dataclass
+class MistralConfig(LlamaConfig):
+    use_sliding_window_: bool = False
+    max_window_layers_: int = None
+    sliding_window_: int = None
+
+
 class MistralFlashAttention(LlamaAttention):
     def __init__(self, wq: Linear, wk: Linear, wv: Linear, wo: Linear,
-                 layer_idx: int, args: LLMModelArgs):
+                 layer_idx: int, args: MistralConfig):
         assert _flash_attn_available, "Flash Attention is not available"
-        super().__init__(wq, wk, wv, wo, args, layer_idx)
+        super().__init__(wq, wk, wv, wo, layer_idx, args)
         # Qwen2
         self.use_sliding_window_ = args.use_sliding_window_
         self.max_window_layers_ = args.max_window_layers_
@@ -227,3 +244,111 @@ class MistralFlashAttention(LlamaAttention):
         attn_output = self.wo_.forward(attn_output, input_args)
 
         return attn_output
+
+
+MISTRAL_ATTENTION_CLASSES = {
+    "eager": LlamaAttention,
+    "xformers": LlamaXformersAttention,
+    "flash_attn": MistralFlashAttention,
+}
+
+
+class MistralForCausalLM(LLMForCausalLM):
+    def __init__(self, config: LlamaConfig) -> None:
+        self.config_ = config
+        self.padding_idx_ = config.pad_token_id_
+        self.vocab_size_ = config.vocab_size_
+        self.embed_tokens_: LlamaEmbedding = None
+        self.norm_: LlamaEmbedding = None
+        self.lm_head_ = nn.Linear(config.dim_, config.vocab_size_, bias=False,
+                                  dtype=config.dtype_, device=config.device_)
+        self.layers_: List[LlamaDecoderLayer] = []
+
+    def decoder_stack(self) -> List[LLMDecoder]:
+        return self.layers_
+
+    def sequential_module(self) -> OrderedDict:
+        seq_module = OrderedDict()
+
+        seq_module.update(
+            {"embedding": LlamaSequentialWrapper(self.embed_tokens_)})
+        seq_module.move_to_end("embedding")
+
+        for index, layer in enumerate(self.layers_):
+            layer_name = f"layer{index}"
+            seq_module.update({layer_name: LlamaSequentialWrapper(layer)})
+            seq_module.move_to_end(layer_name)
+
+        seq_module.update(
+            {"norm": LlamaSequentialWrapper(self.norm_)})
+        seq_module.move_to_end("norm")
+
+        return seq_module
+
+    @staticmethod
+    def from_pretrained(llm_model: modeling_mistral.MistralForCausalLM,
+                        attn_impl: str = "eager",
+                        use_sliding_window: bool = False,
+                        device: str = get_backend().device_name() + ":0"):
+        llm_config: modeling_mistral.MistralConfig = llm_model.config
+        llm_args = MistralConfig(
+            name_or_path_=llm_config.name_or_path,
+            vocab_size_=llm_config.vocab_size,
+            dim_=llm_config.hidden_size,
+            n_layers_=llm_config.num_hidden_layers,
+            n_heads_=llm_config.num_attention_heads,
+            n_kv_heads_=llm_config.num_key_value_heads,
+            rms_norm_eps_=llm_config.rms_norm_eps,
+            max_seq_len_=llm_config.max_position_embeddings,
+            rope_theta_=llm_config.rope_theta,
+            pad_token_id_=llm_config.pad_token_id,
+            attn_implementation_=attn_impl,
+            use_sliding_window_=use_sliding_window,
+            sliding_window_=llm_config.sliding_window,
+            device_=torch.device(device),
+            dtype_=llm_model.dtype,
+        )
+
+        if use_sliding_window and attn_impl != "flash_attn":
+            raise ValueError(
+                f"Can not use sliding window attention with {attn_impl} attention.")
+
+        # compatible with qwen2
+        if isinstance(llm_config, modeling_qwen2.Qwen2Config):
+            llm_args.max_window_layers_ = llm_config.max_window_layers
+
+        if llm_args.pad_token_id_ is None:
+            llm_args.pad_token_id_ = -1
+
+        model = MistralForCausalLM(llm_args)
+        llm_model.requires_grad_(False)
+        model.embed_tokens_ = LlamaEmbedding(
+            llm_model.model.embed_tokens.weight, llm_args.pad_token_id_)
+        model.norm_ = LlamaRMSNorm(
+            llm_model.model.norm.weight, llm_args.rms_norm_eps_)
+        copy_parameters(llm_model.lm_head, model.lm_head_)
+
+        for idx, layer in enumerate(llm_model.model.layers):
+            decoder = LlamaDecoderLayer()
+            decoder.layer_id_ = idx
+            decoder.self_attn_ = MISTRAL_ATTENTION_CLASSES[llm_args.attn_implementation_](
+                layer.self_attn.q_proj,
+                layer.self_attn.k_proj,
+                layer.self_attn.v_proj,
+                layer.self_attn.o_proj,
+                idx,
+                llm_args,
+            )
+            decoder.mlp_ = FeedForward(LlamaMLP(
+                layer.mlp.gate_proj,
+                layer.mlp.down_proj,
+                layer.mlp.up_proj,
+                llm_args,
+            ))
+            decoder.input_layernorm_ = LlamaRMSNorm(
+                layer.input_layernorm.weight, llm_args.rms_norm_eps_)
+            decoder.post_attention_layernorm_ = LlamaRMSNorm(
+                layer.post_attention_layernorm.weight, llm_args.rms_norm_eps_)
+            model.layers_.append(decoder)
+
+        return model

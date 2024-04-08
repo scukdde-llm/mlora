@@ -13,9 +13,9 @@ class Tokenizer:
         self.eos_id_ = self.tokenizer.eos_token_id
         self.pad_id_ = self.tokenizer.pad_token_id
         self.unk_id_ = self.tokenizer.unk_token_id
-        if self.bos_id_ >= self.n_words_ - 1:
+        if self.bos_id_ is not None and self.bos_id_ >= self.n_words_ - 1:
             self.bos_id_ = None
-        if self.eos_id_ >= self.n_words_ - 1:
+        if self.eos_id_ is not None and self.eos_id_ >= self.n_words_ - 1:
             self.eos_id_ = None
         # maybe pad id is unk
         if self.pad_id_ is None and self.unk_id_ is not None:
