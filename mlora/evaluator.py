@@ -1,4 +1,4 @@
-from mlora.modelargs import DataClass, LoraBatchDataConfig, MultiLoraBatchData, MixConfig
+from mlora.common.modelargs import DataClass, LoraBatchDataConfig, MultiLoraBatchData, MixConfig
 from mlora.tasks.common import BasicTask, BasicMetric
 from mlora.tasks.common import CommonSenseTask, task_dict
 from mlora.tokenizer import Tokenizer

@@ -2,16 +2,15 @@ from mlora.backends import get_backend
 from mlora.prompter import Prompter
 from mlora.tokenizer import Tokenizer
 from mlora.model import LLMModel
-from mlora.transformer import LlamaModel
-from mlora.modelargs import DataClass, LLMModelArgs, MultiLoraBatchData, LoraBatchDataConfig
-from mlora.modelargs import LoraConfig, MixConfig, lora_config_factory
+from mlora.common.modelargs import DataClass, LLMModelArgs, MultiLoraBatchData, LoraBatchDataConfig
+from mlora.common.modelargs import LoraConfig, MixConfig, lora_config_factory
 from mlora.dispatcher import TrainTask, Dispatcher
 from mlora.generate import GenerateConfig, generate
 from mlora.train import TrainConfig, train
-from mlora.tasks import EvaluateConfig, evaluate
 from mlora.tasks import BasicMetric, AutoMetric
 from mlora.tasks import BasicTask, CasualTask, CommonSenseTask, SequenceClassificationTask, task_dict
 from mlora.utils import setup_logging
+from mlora.evaluator import EvaluateConfig, evaluate
 
 setup_logging()
 

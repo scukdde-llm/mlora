@@ -1,4 +1,4 @@
-from mlora.modelargs import DataClass
+from mlora.common.modelargs import DataClass
 from mlora.tokenizer import Tokenizer
 from mlora.prompter import Prompter
 

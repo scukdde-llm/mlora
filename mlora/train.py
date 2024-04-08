@@ -1,4 +1,4 @@
-from mlora.modelargs import LoraConfig
+from mlora.common.modelargs import LoraConfig
 from mlora.dispatcher import TrainTask, Dispatcher
 from mlora.tasks import CasualTask, MultiTask, task_dict
 from mlora.model import LLMModel
