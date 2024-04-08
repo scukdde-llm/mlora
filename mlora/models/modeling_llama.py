@@ -485,7 +485,7 @@ class LlamaForCausalLM(LLMForCausalLM):
                         attn_impl: str = "eager",
                         use_sliding_window: bool = False,
                         device: str = get_backend().device_name() + ":0"):
-        assert not use_sliding_window, "Phi model does not support SWA."
+        assert not use_sliding_window, "Llama model does not support SWA."
         llm_config: modeling_llama.LlamaConfig = llm_model.config
         llm_args = LlamaConfig(
             name_or_path_=llm_config.name_or_path,
