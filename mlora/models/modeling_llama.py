@@ -89,9 +89,7 @@ class LlamaAttention(LLMAttention):
 
         # apply rotary embedding
         assert xq.dtype == xk.dtype
-        cos = self.cos_[:max_seq_len].to(xq.dtype)
-        sin = self.sin_[:max_seq_len].to(xq.dtype)
-        xq, xk = apply_rotary_emb(xq, xk, cos, sin)
+        xq, xk = apply_rotary_emb(xq, xk, max_seq_len, self.cos_, self.sin_)
 
         # for llama2 need to repeat the heads
         # before dim: batch_size, n_kv_head, seq_len, head_dim
@@ -134,9 +132,7 @@ class LlamaXformersAttention(LlamaAttention):
 
         # apply rotary embedding
         assert xq.dtype == xk.dtype
-        cos = self.cos_[:max_seq_len].to(xq.dtype)
-        sin = self.sin_[:max_seq_len].to(xq.dtype)
-        xq, xk = apply_rotary_emb(xq, xk, cos, sin)
+        xq, xk = apply_rotary_emb(xq, xk, max_seq_len, self.cos_, self.sin_)
 
         # for llama2 need to repeat the heads
         # before dim: batch_size, n_kv_head, seq_len, head_dim
@@ -258,9 +254,7 @@ class LlamaFlashAttention(LlamaAttention):
 
         # apply rotary embedding
         assert xq.dtype == xk.dtype
-        cos = self.cos_[:max_seq_len].to(xq.dtype)
-        sin = self.sin_[:max_seq_len].to(xq.dtype)
-        xq, xk = apply_rotary_emb(xq, xk, cos, sin)
+        xq, xk = apply_rotary_emb(xq, xk, max_seq_len, self.cos_, self.sin_)
 
         input_dtype = xq.dtype
         if input_dtype == torch.float32:

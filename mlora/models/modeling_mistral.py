@@ -196,9 +196,7 @@ class MistralFlashAttention(LlamaAttention):
 
         # apply rotary embedding
         assert xq.dtype == xk.dtype
-        cos = self.cos_[:max_seq_len].to(xq.dtype)
-        sin = self.sin_[:max_seq_len].to(xq.dtype)
-        xq, xk = apply_rotary_emb(xq, xk, cos, sin)
+        xq, xk = apply_rotary_emb(xq, xk, max_seq_len, self.cos_, self.sin_)
 
         use_sliding_windows = (
             (self.use_sliding_window_ is None or self.use_sliding_window_)

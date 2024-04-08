@@ -47,8 +47,8 @@
                 "k_proj": true,
                 "v_proj": true,
                 "dense": true,
-                "fc1": true,
-                "fc2": true
+                "fc1": false,
+                "fc2": false
             },
             "data": "data/dummy_data.json",
             "prompt": "template/template_demo.json",

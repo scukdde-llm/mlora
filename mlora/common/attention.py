@@ -61,12 +61,14 @@ def precompute_rope_angle(dim: int, seq_len: int,
     return (emb.cos(), emb.sin())
 
 
-def rotate_half(x):
+@torch.jit.script
+def rotate_half(x: torch.Tensor):
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2:]
     return torch.cat((-x2, x1), dim=-1)
 
 
+@torch.jit.script
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     batch, num_key_value_heads, slen, head_dim = hidden_states.shape
     if n_rep == 1:
@@ -76,8 +78,12 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 
 
-def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor,
+@torch.jit.script
+def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor, seq_len: int,
                      cos: torch.Tensor, sin: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    cos = cos[:seq_len].to(xq.dtype)
+    sin = sin[:seq_len].to(xq.dtype)
+
     q_embed = (xq * cos) + (rotate_half(xq) * sin)
     k_embed = (xk * cos) + (rotate_half(xk) * sin)
     return q_embed, k_embed

@@ -42,6 +42,27 @@ class PhiConfig(LLMModelArgs):
     qk_layernorm_: bool = False
 
 
+@torch.jit.script
+def apply_partial_rotary_emb(xq: torch.Tensor, xk: torch.Tensor, rotary_emb_dim: int, seq_len: int,
+                             cos: torch.Tensor, sin: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    q_rot, q_pass = (
+        xq[..., : rotary_emb_dim],
+        xq[..., rotary_emb_dim:],
+    )
+    k_rot, k_pass = (
+        xk[..., : rotary_emb_dim],
+        xk[..., rotary_emb_dim:],
+    )
+    # [batch_size, seq_length, num_heads, head_dim // partial_rotary_factor]
+    q_rot, k_rot = apply_rotary_emb(q_rot, k_rot, seq_len, cos, sin)
+
+    # [batch_size, seq_length, num_heads, head_dim]
+    xq = torch.cat((q_rot, q_pass), dim=-1)
+    xk = torch.cat((k_rot, k_pass), dim=-1)
+
+    return xq, xk
+
+
 # Multi-headed attention from 'Attention Is All You Need' paper.
 class PhiAttention(LLMAttention):
     def __init__(self, q_proj: nn.Module, k_proj: nn.Module, v_proj: nn.Module, dense: nn.Module,
@@ -109,22 +130,9 @@ class PhiAttention(LLMAttention):
                      self.head_dim_).transpose(1, 2)
 
         # partial rotary embedding
-        cos = self.cos_[:max_seq_len].to(xq.dtype)
-        sin = self.sin_[:max_seq_len].to(xq.dtype)
-        q_rot, q_pass = (
-            xq[..., : self.rotary_emb_dim_],
-            xq[..., self.rotary_emb_dim_:],
-        )
-        k_rot, k_pass = (
-            xk[..., : self.rotary_emb_dim_],
-            xk[..., self.rotary_emb_dim_:],
-        )
-        # [batch_size, seq_length, num_heads, head_dim // partial_rotary_factor]
-        q_rot, k_rot = apply_rotary_emb(q_rot, k_rot, cos, sin)
-
-        # [batch_size, seq_length, num_heads, head_dim]
-        xq = torch.cat((q_rot, q_pass), dim=-1)
-        xk = torch.cat((k_rot, k_pass), dim=-1)
+        assert xq.dtype == xk.dtype
+        xq, xk = apply_partial_rotary_emb(
+            xq, xk, self.rotary_emb_dim_, max_seq_len, self.cos_, self.sin_)
 
         # before dim: batch_size, n_kv_head, seq_len, head_dim
         # after dim: batch_size, n_head, seq_len, head_dim
@@ -168,22 +176,9 @@ class PhiXformersAttention(PhiAttention):
                      self.head_dim_).transpose(1, 2)
 
         # partial rotary embedding
-        cos = self.cos_[:max_seq_len].to(xq.dtype)
-        sin = self.sin_[:max_seq_len].to(xq.dtype)
-        q_rot, q_pass = (
-            xq[..., : self.rotary_emb_dim_],
-            xq[..., self.rotary_emb_dim_:],
-        )
-        k_rot, k_pass = (
-            xk[..., : self.rotary_emb_dim_],
-            xk[..., self.rotary_emb_dim_:],
-        )
-        # [batch_size, seq_length, num_heads, head_dim // partial_rotary_factor]
-        q_rot, k_rot = apply_rotary_emb(q_rot, k_rot, cos, sin)
-
-        # [batch_size, seq_length, num_heads, head_dim]
-        xq = torch.cat((q_rot, q_pass), dim=-1)
-        xk = torch.cat((k_rot, k_pass), dim=-1)
+        assert xq.dtype == xk.dtype
+        xq, xk = apply_partial_rotary_emb(
+            xq, xk, self.rotary_emb_dim_, max_seq_len, self.cos_, self.sin_)
 
         # before dim: batch_size, n_kv_head, seq_len, head_dim
         # after dim: batch_size, n_head, seq_len, head_dim
@@ -306,22 +301,9 @@ class PhiFlashAttention2(PhiAttention):
                      self.head_dim_).transpose(1, 2)
 
         # partial rotary embedding
-        cos = self.cos_[:max_seq_len].to(xq.dtype)
-        sin = self.sin_[:max_seq_len].to(xq.dtype)
-        q_rot, q_pass = (
-            xq[..., : self.rotary_emb_dim_],
-            xq[..., self.rotary_emb_dim_:],
-        )
-        k_rot, k_pass = (
-            xk[..., : self.rotary_emb_dim_],
-            xk[..., self.rotary_emb_dim_:],
-        )
-        # [batch_size, seq_length, num_heads, head_dim // partial_rotary_factor]
-        q_rot, k_rot = apply_rotary_emb(q_rot, k_rot, cos, sin)
-
-        # [batch_size, seq_length, num_heads, head_dim]
-        xq = torch.cat((q_rot, q_pass), dim=-1)
-        xk = torch.cat((k_rot, k_pass), dim=-1)
+        assert xq.dtype == xk.dtype
+        xq, xk = apply_partial_rotary_emb(
+            xq, xk, self.rotary_emb_dim_, max_seq_len, self.cos_, self.sin_)
 
         input_dtype = xq.dtype
         if input_dtype == torch.float32:
