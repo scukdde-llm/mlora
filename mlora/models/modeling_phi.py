@@ -369,8 +369,8 @@ class PhiMLP(LLMFeedForward):
 
     def state_dict(self) -> Dict[str, nn.Module]:
         return {
-            "fc1_proj": self.fc1_,
-            "fc2_proj": self.fc2_,
+            "fc1": self.fc1_,
+            "fc2": self.fc2_,
         }
 
     def _batch_forward(self, hidden_states: torch.Tensor, input_args: MultiLoraBatchData) -> torch.Tensor:

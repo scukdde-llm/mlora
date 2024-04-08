@@ -133,8 +133,8 @@ class LoraConfig:
             "w3_proj": False,
             # Phi names
             "dense": False,
-            "fc1_proj": False,
-            "fc2_proj": False,
+            "fc1": False,
+            "fc2": False,
         }
         if isinstance(config["target_modules"], List):
             for target in config["target_modules"]:
