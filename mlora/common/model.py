@@ -1,4 +1,4 @@
-from .modelargs import MultiLoraBatchData
+from .modelargs import Masks, MultiLoraBatchData
 
 import torch
 
@@ -73,6 +73,14 @@ class LLMForCausalLM(metaclass=ABCMeta):
 
     @classmethod
     def sequential_module(self) -> OrderedDict:
+        pass
+
+    @classmethod
+    def causal_mask(self,
+                    input_tokens: torch.Tensor,
+                    additional_mask: List[Masks] = None,
+                    multi_head: bool = False,
+                    diagonal: int = 1) -> torch.Tensor:
         pass
 
     @staticmethod

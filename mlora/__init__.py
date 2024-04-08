@@ -19,7 +19,7 @@ __all__ = [
     "Prompter",
     "Tokenizer",
     "LLMModel",
-    "LlamaModel",
+    "LLMModel",
     "DataClass",
     "LLMModelArgs",
     "MultiLoraBatchData",

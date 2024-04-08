@@ -1,6 +1,5 @@
-from mlora.common.modelargs import LLMModelArgs, MultiLoraBatchData
+from mlora.common.modelargs import MultiLoraBatchData
 from mlora.common.feed_forward import FeedForward
-from mlora.common.model import LLMDecoder
 from mlora.models.modeling_llama import (
     LlamaConfig,
     LlamaAttention,
@@ -9,10 +8,8 @@ from mlora.models.modeling_llama import (
     LlamaDecoderLayer,
     LlamaRMSNorm,
     LlamaEmbedding,
-    LlamaSequentialWrapper,
     LLMForCausalLM,
 )
-from mlora.common.lora_linear import Linear
 from mlora.common.attention import (
     _flash_attn_available,
     apply_rotary_emb,
@@ -22,9 +19,8 @@ from mlora.common.attention import (
 from mlora.backends import _backend, get_backend
 from mlora.utils import copy_parameters
 
-from collections import OrderedDict
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -255,35 +251,7 @@ MISTRAL_ATTENTION_CLASSES = {
 
 class MistralForCausalLM(LLMForCausalLM):
     def __init__(self, config: LlamaConfig) -> None:
-        self.config_ = config
-        self.padding_idx_ = config.pad_token_id_
-        self.vocab_size_ = config.vocab_size_
-        self.embed_tokens_: LlamaEmbedding = None
-        self.norm_: LlamaEmbedding = None
-        self.lm_head_ = nn.Linear(config.dim_, config.vocab_size_, bias=False,
-                                  dtype=config.dtype_, device=config.device_)
-        self.layers_: List[LlamaDecoderLayer] = []
-
-    def decoder_stack(self) -> List[LLMDecoder]:
-        return self.layers_
-
-    def sequential_module(self) -> OrderedDict:
-        seq_module = OrderedDict()
-
-        seq_module.update(
-            {"embedding": LlamaSequentialWrapper(self.embed_tokens_)})
-        seq_module.move_to_end("embedding")
-
-        for index, layer in enumerate(self.layers_):
-            layer_name = f"layer{index}"
-            seq_module.update({layer_name: LlamaSequentialWrapper(layer)})
-            seq_module.move_to_end(layer_name)
-
-        seq_module.update(
-            {"norm": LlamaSequentialWrapper(self.norm_)})
-        seq_module.move_to_end("norm")
-
-        return seq_module
+        super().__init__(config)
 
     @staticmethod
     def from_pretrained(llm_model: modeling_mistral.MistralForCausalLM,

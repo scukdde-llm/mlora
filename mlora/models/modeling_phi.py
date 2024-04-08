@@ -4,12 +4,14 @@ from mlora.common.modelargs import LLMModelArgs, MultiLoraBatchData
 from mlora.common.feed_forward import FeedForward
 from mlora.common.lora_linear import Linear
 from mlora.common.attention import (
+    prepare_4d_causal_attention_mask,
     scaled_dot_product_attention,
     precompute_rope_angle,
     _flash_attn_available,
     apply_rotary_emb,
     get_unpad_data,
     repeat_kv,
+    Masks,
 )
 from mlora.backends import _backend, get_backend
 from mlora.utils import copy_parameters
@@ -455,6 +457,17 @@ class PhiForCausalLM(LLMForCausalLM):
         seq_module.move_to_end("norm")
 
         return seq_module
+
+    def causal_mask(self,
+                    input_tokens: torch.Tensor,
+                    additional_mask: List[Masks] = None,
+                    multi_head: bool = False,
+                    diagonal: int = 1) -> torch.Tensor:
+        assert not multi_head and self.config_.attn_implementation_ != "xformers"
+        return prepare_4d_causal_attention_mask(input_tokens=input_tokens,
+                                                n_heads=self.config_.n_heads_ if multi_head else 1,
+                                                additional_mask=additional_mask, diagonal=diagonal,
+                                                dtype=self.config_.dtype_, device=self.config_.device_)
 
     @staticmethod
     def from_pretrained(llm_model: modeling_phi.PhiForCausalLM,

@@ -1,5 +1,4 @@
 from mlora.common.modelargs import (
-    Masks,
     LLMModelArgs,
     LLMModelOutput,
     MultiLoraBatchData,
@@ -33,42 +32,6 @@ if is_package_available("bitsandbytes"):
     from transformers import BitsAndBytesConfig
 else:
     from mlora.utils import BitsAndBytesConfig
-
-
-# input_tokens shape is: batch_size * seq_len
-#   default: upper triangular matrix like below, i.e. diagonal = 1
-#            0 -inf -inf
-#            0    0 -inf
-#            0    0    0
-# additional_mask: batch_size * seq_len
-#   default: is None the matrix like default, if set true, the mask metric will be -inf
-#   example: [[True, False, False]]
-#           -inf -inf -inf
-#           -inf    0 -inf
-#           -inf    0    0
-def precompute_mask(input_tokens: torch.Tensor,
-                    n_heads: int,
-                    device: str,
-                    additional_mask: List[Masks] = None,
-                    diagonal: int = 1,
-                    dtype: torch.dtype = torch.float32) -> torch.Tensor:
-    batch_size, seq_len = input_tokens.shape
-
-    TORCH_MIN_VALUE = torch.finfo(torch.float32).min
-    mask = torch.full((batch_size, n_heads, seq_len, seq_len),
-                      TORCH_MIN_VALUE, device=device, dtype=torch.float32)
-    mask = torch.triu(mask, diagonal=diagonal)
-
-    if additional_mask is not None:
-        masks_metric = ~torch.tensor(
-            additional_mask, dtype=torch.bool, device=device)
-        masks_metric = masks_metric.view(batch_size, 1, 1, seq_len)
-        masks_metric = masks_metric.expand(-1, n_heads, seq_len, -1)
-        mask = torch.masked_fill(mask, masks_metric, TORCH_MIN_VALUE)
-
-    mask.requires_grad_(False)
-
-    return mask.to(device=device, dtype=dtype)
 
 
 class CasualOutputLayer(LLMOutput):
@@ -273,13 +236,11 @@ class LLMModel(torch.nn.Module):
             else:
                 mask = None
         else:
-            mask = precompute_mask(
+            mask = self.model_.causal_mask(
                 input_tokens=tokens,
-                n_heads=1 if input.inference_mode_ else self.config_.n_heads_,
-                device=self.device_,
                 additional_mask=input.attention_masks_,
-                diagonal=input.inference_seq_pos_ + 1 if input.inference_mode_ else 1,
-                dtype=self.dtype_)
+                multi_head=(self.config_.attn_implementation_ == "xformers"),
+                diagonal=input.inference_seq_pos_ + 1 if input.inference_mode_ else 1)
 
         # routing data
         router_logits: List[List] = list(

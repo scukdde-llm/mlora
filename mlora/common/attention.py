@@ -1,5 +1,6 @@
 from mlora.utils import is_package_available
-from typing import Tuple, Optional
+from typing import Tuple, List, Optional
+from .modelargs import Masks
 
 import torch.nn.functional as F
 import torch
@@ -7,6 +8,42 @@ import math
 
 _xformers_available = is_package_available("xformers")
 _flash_attn_available = is_package_available("flash_attn")
+
+
+# input_tokens shape is: batch_size * seq_len
+#   default: upper triangular matrix like below, i.e. diagonal = 1
+#            0 -inf -inf
+#            0    0 -inf
+#            0    0    0
+# additional_mask: batch_size * seq_len
+#   default: is None the matrix like default, if set true, the mask metric will be -inf
+#   example: [[True, False, False]]
+#           -inf -inf -inf
+#           -inf    0 -inf
+#           -inf    0    0
+def prepare_4d_causal_attention_mask(input_tokens: torch.Tensor,
+                                     n_heads: int,
+                                     device: str,
+                                     additional_mask: List[Masks] = None,
+                                     diagonal: int = 1,
+                                     dtype: torch.dtype = torch.float32) -> torch.Tensor:
+    batch_size, seq_len = input_tokens.shape
+
+    TORCH_MIN_VALUE = torch.finfo(torch.float32).min
+    mask = torch.full((batch_size, n_heads, seq_len, seq_len),
+                      TORCH_MIN_VALUE, device=device, dtype=torch.float32)
+    mask = torch.triu(mask, diagonal=diagonal)
+
+    if additional_mask is not None:
+        masks_metric = ~torch.tensor(
+            additional_mask, dtype=torch.bool, device=device)
+        masks_metric = masks_metric.view(batch_size, 1, 1, seq_len)
+        masks_metric = masks_metric.expand(-1, n_heads, seq_len, -1)
+        mask = torch.masked_fill(mask, masks_metric, TORCH_MIN_VALUE)
+
+    mask.requires_grad_(False)
+
+    return mask.to(device=device, dtype=dtype)
 
 
 def precompute_rope_angle(dim: int, seq_len: int,
