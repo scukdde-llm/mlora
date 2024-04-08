@@ -41,7 +41,7 @@ class LlamaConfig(LLMModelArgs):
 
 # Multi-headed attention from 'Attention Is All You Need' paper.
 class LlamaAttention(LLMAttention):
-    def __init__(self, wq: Linear, wk: Linear, wv: Linear, wo: Linear,
+    def __init__(self, wq: nn.Module, wk: nn.Module, wv: nn.Module, wo: nn.Module,
                  layer_idx: int, args: LlamaConfig):
         super().__init__()
         # attention
@@ -110,7 +110,7 @@ class LlamaAttention(LLMAttention):
 
 
 class LlamaXformersAttention(LlamaAttention):
-    def __init__(self, wq: Linear, wk: Linear, wv: Linear, wo: Linear,
+    def __init__(self, wq: nn.Module, wk: nn.Module, wv: nn.Module, wo: nn.Module,
                  layer_idx: int, args: LlamaConfig):
         assert _xformers_available, "xFormers Attention is not available"
         super().__init__(wq, wk, wv, wo, layer_idx, args)
@@ -163,7 +163,7 @@ class LlamaXformersAttention(LlamaAttention):
 
 
 class LlamaFlashAttention(LlamaAttention):
-    def __init__(self, wq: Linear, wk: Linear, wv: Linear, wo: Linear,
+    def __init__(self, wq: nn.Module, wk: nn.Module, wv: nn.Module, wo: nn.Module,
                  layer_idx: int, args: LlamaConfig):
         assert _flash_attn_available, "Flash Attention is not available"
         super().__init__(wq, wk, wv, wo, layer_idx, args)
@@ -270,12 +270,6 @@ class LlamaFlashAttention(LlamaAttention):
         cos = self.cos_[:max_seq_len].to(xq.dtype)
         sin = self.sin_[:max_seq_len].to(xq.dtype)
         xq, xk = apply_rotary_emb(xq, xk, cos, sin)
-
-        # for llama2 need to repeat the heads
-        # before dim: batch_size, n_kv_head, seq_len, head_dim
-        # after dim: batch_size, n_head, seq_len, head_dim
-        xk = repeat_kv(xk, self.n_rep_)
-        xv = repeat_kv(xv, self.n_rep_)
 
         input_dtype = xq.dtype
         if input_dtype == torch.float32:

@@ -44,7 +44,7 @@ class MistralConfig(LlamaConfig):
 
 
 class MistralFlashAttention(LlamaAttention):
-    def __init__(self, wq: Linear, wk: Linear, wv: Linear, wo: Linear,
+    def __init__(self, wq: nn.Module, wk: nn.Module, wv: nn.Module, wo: nn.Module,
                  layer_idx: int, args: MistralConfig):
         assert _flash_attn_available, "Flash Attention is not available"
         super().__init__(wq, wk, wv, wo, layer_idx, args)
