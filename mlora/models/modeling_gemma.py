@@ -21,7 +21,7 @@ import transformers.models.gemma.modeling_gemma as modeling_gemma
 
 
 class GemmaMLP(LlamaMLP):
-    def __init__(self, w1: torch.nn.Module, w2: torch.nn.Module, w3: torch.nn.Module, args: LlamaConfig) -> None:
+    def __init__(self, w1: nn.Module, w2: nn.Module, w3: nn.Module, args: LlamaConfig) -> None:
         super().__init__(w1, w2, w3, args)
         self.act_ = ACT2FN["gelu_pytorch_tanh"]
 
@@ -60,8 +60,8 @@ class GemmaEmbedding(nn.Module):
         return data * normalizer
 
 
-class GemmaSequentialWrapper(torch.nn.Module):
-    def __init__(self, module: torch.nn.Module):
+class GemmaSequentialWrapper(nn.Module):
+    def __init__(self, module: nn.Module):
         super().__init__()
         self.wrapper_module_ = module
 

@@ -8,6 +8,7 @@ from mlora.common.attention import (
     _xformers_available,
     prepare_4d_causal_attention_mask,
     scaled_dot_product_attention,
+    xformers_attention,
     precompute_rope_angle,
     apply_rotary_emb,
     get_unpad_data,
@@ -26,10 +27,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import transformers.models.llama.modeling_llama as modeling_llama
-
-if _xformers_available:
-    import xformers.ops
-    import xformers.ops.fmha.attn_bias
 
 if _flash_attn_available:
     from flash_attn import flash_attn_func, flash_attn_varlen_func
@@ -117,14 +114,6 @@ class LlamaXformersAttention(LlamaAttention):
         assert _xformers_available, "xFormers Attention is not available"
         super().__init__(wq, wk, wv, wo, layer_idx, args)
 
-    def _xformers_attention(self, xq, xk, xv, attention_mask):
-        xq = xq.transpose(1, 2)
-        xk = xk.transpose(1, 2)
-        xv = xv.transpose(1, 2)
-        attention_score = xformers.ops.memory_efficient_attention(
-            xq, xk, xv, attention_mask)
-        return attention_score
-
     def forward(self,
                 hidden_states: torch.Tensor,
                 input_args: MultiLoraBatchData,
@@ -155,7 +144,7 @@ class LlamaXformersAttention(LlamaAttention):
         xk = repeat_kv(xk, self.n_rep_)
         xv = repeat_kv(xv, self.n_rep_)
 
-        attention_score = self._xformers_attention(
+        attention_score = xformers_attention(
             xq, xk, xv, attention_mask)
 
         attention_score = attention_score.reshape(batch_size, max_seq_len, -1)
@@ -310,7 +299,7 @@ LLAMA_ATTENTION_CLASSES = {
 
 
 class LlamaMLP(LLMFeedForward):
-    def __init__(self, w1: torch.nn.Module, w2: torch.nn.Module, w3: torch.nn.Module, args: LlamaConfig) -> None:
+    def __init__(self, w1: nn.Module, w2: nn.Module, w3: nn.Module, args: LlamaConfig) -> None:
         super().__init__()
         # feed forward
         self.w1_: Linear = Linear(w1, args.device_)
@@ -318,7 +307,7 @@ class LlamaMLP(LLMFeedForward):
         self.w3_: Linear = Linear(w3, args.device_)
         self.act_ = ACT2FN["silu"]
 
-    def state_dict(self) -> Dict[str, torch.nn.Module]:
+    def state_dict(self) -> Dict[str, nn.Module]:
         return {
             "w1_proj": self.w1_,
             "w2_proj": self.w2_,
@@ -331,7 +320,7 @@ class LlamaMLP(LLMFeedForward):
         return self.w2_.forward(self.act_(w1) * w3, input_args)
 
     def _lora_forward(
-            self, lora_name: str, act_fn: torch.nn.Module, data: torch.Tensor) -> torch.Tensor:
+            self, lora_name: str, act_fn: nn.Module, data: torch.Tensor) -> torch.Tensor:
         # Applying LoRA weights to FFN weights
         if lora_name in self.w1_.loras_:
             w1 = self.w1_.loras_[lora_name].forward(
@@ -376,7 +365,7 @@ class LlamaDecoderLayer(LLMDecoder):
         self.input_layernorm_: LlamaRMSNorm = None
         self.post_attention_layernorm_: LlamaRMSNorm = None
 
-    def state_dict(self) -> Dict[str, torch.nn.Module]:
+    def state_dict(self) -> Dict[str, nn.Module]:
         linear_layers = self.self_attn_.state_dict()
         linear_layers.update(self.mlp_.state_dict())
         return linear_layers
@@ -414,8 +403,8 @@ class LlamaEmbedding(nn.Module):
         return data
 
 
-class LlamaSequentialWrapper(torch.nn.Module):
-    def __init__(self, module: torch.nn.Module):
+class LlamaSequentialWrapper(nn.Module):
+    def __init__(self, module: nn.Module):
         super().__init__()
         self.wrapper_module_ = module
 

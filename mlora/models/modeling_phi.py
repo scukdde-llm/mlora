@@ -4,10 +4,12 @@ from mlora.common.modelargs import LLMModelArgs, MultiLoraBatchData
 from mlora.common.feed_forward import FeedForward
 from mlora.common.lora_linear import Linear
 from mlora.common.attention import (
+    _flash_attn_available,
+    _xformers_available,
     prepare_4d_causal_attention_mask,
     scaled_dot_product_attention,
+    xformers_attention,
     precompute_rope_angle,
-    _flash_attn_available,
     apply_rotary_emb,
     get_unpad_data,
     repeat_kv,
@@ -130,6 +132,65 @@ class PhiAttention(LLMAttention):
         xv = repeat_kv(xv, self.n_rep_)
 
         attention_score = scaled_dot_product_attention(
+            xq.to(torch.float32), xk.to(torch.float32), xv, attention_mask)
+
+        attention_score = attention_score.reshape(batch_size, max_seq_len, -1)
+        attention_score = self.dense_.forward(attention_score, input_args)
+
+        return attention_score
+
+
+class PhiXformersAttention(PhiAttention):
+    def __init__(self, q_proj: nn.Module, k_proj: nn.Module, v_proj: nn.Module, dense: nn.Module,
+                 layer_idx: int, args: PhiConfig):
+        assert _xformers_available, "xFormers Attention is not available"
+        super().__init__(q_proj, k_proj, v_proj, dense, layer_idx, args)
+
+    def forward(self,
+                hidden_states: torch.Tensor,
+                input_args: MultiLoraBatchData,
+                attention_mask: Optional[torch.Tensor] = None):
+        batch_size, max_seq_len, _ = hidden_states.shape
+
+        xq = self.wq_.forward(hidden_states, input_args)
+        xk = self.wk_.forward(hidden_states, input_args)
+        xv = self.wv_.forward(hidden_states, input_args)
+
+        xq = self.q_layernorm_(xq)
+        xk = self.k_layernorm_(xk)
+
+        # conver shape to multi head
+        xq = xq.view(batch_size, max_seq_len, self.n_heads_,
+                     self.head_dim_).transpose(1, 2)
+        xk = xk.view(batch_size, max_seq_len, self.n_kv_heads_,
+                     self.head_dim_).transpose(1, 2)
+        xv = xv.view(batch_size, max_seq_len, self.n_kv_heads_,
+                     self.head_dim_).transpose(1, 2)
+
+        # partial rotary embedding
+        cos = self.cos_[:max_seq_len].to(xq.dtype)
+        sin = self.sin_[:max_seq_len].to(xq.dtype)
+        q_rot, q_pass = (
+            xq[..., : self.rotary_emb_dim_],
+            xq[..., self.rotary_emb_dim_:],
+        )
+        k_rot, k_pass = (
+            xk[..., : self.rotary_emb_dim_],
+            xk[..., self.rotary_emb_dim_:],
+        )
+        # [batch_size, seq_length, num_heads, head_dim // partial_rotary_factor]
+        q_rot, k_rot = apply_rotary_emb(q_rot, k_rot, cos, sin)
+
+        # [batch_size, seq_length, num_heads, head_dim]
+        xq = torch.cat((q_rot, q_pass), dim=-1)
+        xk = torch.cat((k_rot, k_pass), dim=-1)
+
+        # before dim: batch_size, n_kv_head, seq_len, head_dim
+        # after dim: batch_size, n_head, seq_len, head_dim
+        xk = repeat_kv(xk, self.n_rep_)
+        xv = repeat_kv(xv, self.n_rep_)
+
+        attention_score = xformers_attention(
             xq.to(torch.float32), xk.to(torch.float32), xv, attention_mask)
 
         attention_score = attention_score.reshape(batch_size, max_seq_len, -1)
@@ -293,20 +354,20 @@ class PhiFlashAttention2(PhiAttention):
 
 PHI_ATTENTION_CLASSES = {
     "eager": PhiAttention,
-    "xformers": None,
+    "xformers": PhiXformersAttention,
     "flash_attn": PhiFlashAttention2,
 }
 
 
 class PhiMLP(LLMFeedForward):
-    def __init__(self, fc1: torch.nn.Module, fc2: torch.nn.Module, args: PhiConfig) -> None:
+    def __init__(self, fc1: nn.Module, fc2: nn.Module, args: PhiConfig) -> None:
         super().__init__()
         # feed forward
         self.fc1_: Linear = Linear(fc1, args.device_)
         self.fc2_: Linear = Linear(fc2, args.device_)
         self.act_ = ACT2FN["gelu_new"]
 
-    def state_dict(self) -> Dict[str, torch.nn.Module]:
+    def state_dict(self) -> Dict[str, nn.Module]:
         return {
             "fc1_proj": self.fc1_,
             "fc2_proj": self.fc2_,
@@ -319,7 +380,7 @@ class PhiMLP(LLMFeedForward):
         return hidden_states
 
     def _lora_forward(
-            self, lora_name: str, act_fn: torch.nn.Module, hidden_states: torch.Tensor) -> torch.Tensor:
+            self, lora_name: str, act_fn: nn.Module, hidden_states: torch.Tensor) -> torch.Tensor:
         if lora_name in self.fc1_.loras_:
             hidden_states = self.fc1_.loras_[lora_name].forward(
                 self.fc1_.base_layer_.forward(hidden_states), hidden_states)
@@ -347,7 +408,7 @@ class PhiDecoderLayer(LLMDecoder):
             args.dim_, eps=args.layer_norm_eps_, dtype=args.dtype_, device=args.device_)
         self.resid_pdrop_ = args.resid_pdrop_
 
-    def state_dict(self) -> Dict[str, torch.nn.Module]:
+    def state_dict(self) -> Dict[str, nn.Module]:
         linear_layers = self.self_attn_.state_dict()
         linear_layers.update(self.mlp_.state_dict())
         return linear_layers
@@ -396,8 +457,8 @@ class PhiLayerNorm(nn.Module):
         return self.layernorm_(data)
 
 
-class PhiSequentialWrapper(torch.nn.Module):
-    def __init__(self, module: torch.nn.Module):
+class PhiSequentialWrapper(nn.Module):
+    def __init__(self, module: nn.Module):
         super().__init__()
         self.wrapper_module_ = module
 
