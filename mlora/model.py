@@ -397,6 +397,8 @@ class LLMModel(torch.nn.Module):
         model = from_pretrained(llm_model, attn_impl=attn_impl,
                                 use_sliding_window=use_sliding_window, device=device)
 
+        logging.info(f"Use {attn_impl} as attention implementation.")
+
         return LLMModel(model)
 
     def get_generate_paramas(self) -> Dict[str, GenerateConfig]:

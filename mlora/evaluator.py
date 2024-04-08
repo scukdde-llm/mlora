@@ -47,7 +47,7 @@ class EvaluateConfig:
 
 def _prepare_tasks(model, tokenizer, configs):
     for config in configs:
-        config.prepare(tokenizer)
+        config.prepare(tokenizer, model.device_)
         if not isinstance(model.adapter_configs_[config.adapter_name], MixConfig):
             continue
         for layer in model.layers_:
