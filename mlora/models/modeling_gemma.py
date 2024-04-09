@@ -22,12 +22,6 @@ import torch.nn.functional as F
 import transformers.models.gemma.modeling_gemma as modeling_gemma
 
 
-class GemmaMLP(LlamaMLP):
-    def __init__(self, w1: nn.Module, w2: nn.Module, w3: nn.Module, args: LlamaConfig) -> None:
-        super().__init__(w1, w2, w3, args)
-        self.act_ = ACT2FN["gelu_pytorch_tanh"]
-
-
 class GemmaRMSNorm(nn.Module):
     def __init__(self, weight: torch.Tensor, eps: float = 1e-6):
         super().__init__()
@@ -128,6 +122,7 @@ class GemmaForCausalLM(LlamaForCausalLM):
             n_layers_=llm_config.num_hidden_layers,
             n_heads_=llm_config.num_attention_heads,
             n_kv_heads_=llm_config.num_key_value_heads,
+            hidden_act_=llm_config.hidden_act,
             rms_norm_eps_=llm_config.rms_norm_eps,
             max_seq_len_=llm_config.max_position_embeddings,
             rope_theta_=llm_config.rope_theta,
@@ -159,7 +154,7 @@ class GemmaForCausalLM(LlamaForCausalLM):
                 idx,
                 llm_args,
             )
-            decoder.mlp_ = FeedForward(GemmaMLP(
+            decoder.mlp_ = FeedForward(LlamaMLP(
                 layer.mlp.gate_proj,
                 layer.mlp.down_proj,
                 layer.mlp.up_proj,
