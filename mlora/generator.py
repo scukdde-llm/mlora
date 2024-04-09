@@ -1,10 +1,56 @@
-from mlora.common.modelargs import LoraBatchDataConfig, MultiLoraBatchData, GenerateConfig
-from mlora.tokenizer import Tokenizer, Tokens
+from mlora.common import Tokens, LoraBatchDataConfig, MultiLoraBatchData
+from mlora.tokenizer import Tokenizer
+from mlora.prompter import Prompter
 from mlora.model import LLMModel
 
-from typing import List
+from dataclasses import dataclass
+from typing import List, Tuple, Union
 import logging
 import torch
+
+
+@dataclass
+class GenerateConfig:
+    adapter_name: str = None
+    prompts: List[Union[str, Tuple[str, str]]] = None
+    prompt_template: str = None
+    # Generate Arguments
+    temperature: float = 1
+    top_p: float = 0.9
+    top_k: float = 50
+    do_sample: bool = True
+    repetition_penalty: float = 1.1
+    renormalize_logits: bool = True
+    # Do not set these manually
+    batch_start_idx_: int = -1
+    batch_end_idx_: int = -1
+    prompter_: Prompter = None
+
+    # Set prompt_template_ to enable the prompter
+    def generate_prompt(self, instruction: str, input: str = None) -> str:
+        if self.prompt_template is None:
+            if input is not None:
+                logging.warn("Drop input when prompt template is not set.")
+            return instruction
+
+        if self.prompter_ is None:
+            self.prompter_ = Prompter(self.prompt_template)
+
+        return self.prompter_.generate_prompt(instruction=instruction, input=input)
+
+    def get_prompts(self) -> List[str]:
+        prompts = []
+        for prompt in self.prompts:
+            args = prompt if isinstance(prompt, Tuple) else (prompt, None)
+            prompts.append(self.generate_prompt(*args))
+
+        return prompts
+
+    def get_response(self, output: str) -> str:
+        if self.prompter_ is None:
+            return output.strip()
+        else:
+            return self.prompter_.get_response(output)
 
 
 def _logits_sample_top_p(probs, p, filter_value=float("-inf"), min_tokens_to_keep=1):

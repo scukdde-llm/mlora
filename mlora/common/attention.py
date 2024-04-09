@@ -89,7 +89,7 @@ def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor, seq_len: int,
     return q_embed, k_embed
 
 
-def get_unpad_data(attention_mask):
+def get_unpad_data(attention_mask: torch.Tensor):
     seqlens_in_batch = attention_mask.sum(dim=-1, dtype=torch.int32)
     indices = torch.nonzero(attention_mask.flatten(), as_tuple=False).flatten()
     max_seqlen_in_batch = seqlens_in_batch.max().item()

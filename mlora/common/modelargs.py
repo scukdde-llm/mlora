@@ -1,10 +1,9 @@
-from typing import Tuple, Union, Any, List, Dict, Callable
+from typing import Any, List, Dict, Callable
 from transformers.activations import ACT2FN
 from mlora.backends import get_backend
-from mlora.prompter import Prompter
+
 from dataclasses import dataclass
 
-import logging
 import torch
 import copy
 
@@ -275,47 +274,3 @@ def lora_config_factory(config: Dict[str, any]) -> LoraConfig:
         return MixConfig().from_config(config).check()
     else:
         return LoraConfig().from_config(config).check()
-
-
-@dataclass
-class GenerateConfig:
-    adapter_name: str = None
-    prompts: List[Union[str, Tuple[str, str]]] = None
-    prompt_template: str = None
-    # Generate Arguments
-    temperature: float = 1
-    top_p: float = 0.9
-    top_k: float = 50
-    do_sample: bool = True
-    repetition_penalty: float = 1.1
-    renormalize_logits: bool = True
-    # Do not set these manually
-    batch_start_idx_: int = -1
-    batch_end_idx_: int = -1
-    prompter_: Prompter = None
-
-    # Set prompt_template_ to enable the prompter
-    def generate_prompt(self, instruction: str, input: str = None) -> str:
-        if self.prompt_template is None:
-            if input is not None:
-                logging.warn("Drop input when prompt template is not set.")
-            return instruction
-
-        if self.prompter_ is None:
-            self.prompter_ = Prompter(self.prompt_template)
-
-        return self.prompter_.generate_prompt(instruction=instruction, input=input)
-
-    def get_prompts(self) -> List[str]:
-        prompts = []
-        for prompt in self.prompts:
-            args = prompt if isinstance(prompt, Tuple) else (prompt, None)
-            prompts.append(self.generate_prompt(*args))
-
-        return prompts
-
-    def get_response(self, output: str) -> str:
-        if self.prompter_ is None:
-            return output.strip()
-        else:
-            return self.prompter_.get_response(output)

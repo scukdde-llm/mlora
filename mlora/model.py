@@ -1,19 +1,16 @@
-from mlora.common.modelargs import (
+from mlora.common import (
+    LLMOutput,
+    LLMDecoder,
+    LLMForCausalLM,
     LLMModelArgs,
     LLMModelOutput,
     MultiLoraBatchData,
     LoraConfig,
     MixConfig,
+    router_loss_factory,
     lora_config_factory,
-    GenerateConfig,
-)
-from mlora.common.model import (
-    LLMForCausalLM,
-    LLMDecoder,
-    LLMOutput,
 )
 from mlora.tasks import SequenceClassificationTask, task_dict
-from mlora.common.mix_lora import router_loss_factory
 from mlora.utils import is_package_available
 from mlora.models import from_pretrained
 from mlora.backends import get_backend
@@ -361,13 +358,6 @@ class LLMModel(torch.nn.Module):
         logging.info(f"Use {attn_impl} as attention implementation.")
 
         return LLMModel(model)
-
-    def get_generate_paramas(self) -> Dict[str, GenerateConfig]:
-        generate_paramas = {}
-        for adapter_name in self.adapter_configs_.keys():
-            generate_paramas[adapter_name] = GenerateConfig(
-                adapter_name=adapter_name)
-        return generate_paramas
 
     def get_lora_weight_dict(self, lora_name: str) -> Dict[str, torch.Tensor]:
         # return the lora weight and target_module's name

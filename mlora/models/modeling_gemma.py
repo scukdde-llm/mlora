@@ -1,5 +1,7 @@
-from mlora.checkpoint import CheckpointRecomputeFunction as CheckpointFunction
-from mlora.common.feed_forward import FeedForward
+from mlora.common import (
+    CheckpointRecomputeFunction as CheckpointFunction,
+    FeedForward,
+)
 from mlora.models.modeling_llama import (
     LlamaConfig,
     LLAMA_ATTENTION_CLASSES as GEMMA_ATTENTION_CLASSES,

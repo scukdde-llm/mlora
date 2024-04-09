@@ -1,8 +1,17 @@
-from mlora.common.modelargs import DataClass, LoraBatchDataConfig, MultiLoraBatchData, MixConfig
-from mlora.tasks.common import BasicTask, BasicMetric
-from mlora.tasks.common import CommonSenseTask, task_dict
-from mlora.tokenizer import Tokenizer
-from mlora.model import LLMModel
+from .common import (
+    DataClass,
+    LoraBatchDataConfig,
+    MultiLoraBatchData,
+    MixConfig,
+)
+from .tasks import (
+    BasicTask,
+    BasicMetric,
+    CommonSenseTask,
+    task_dict,
+)
+from .tokenizer import Tokenizer
+from .model import LLMModel
 
 
 from dataclasses import dataclass

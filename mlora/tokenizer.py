@@ -1,4 +1,4 @@
-from mlora.common.modelargs import Tokens, Masks
+from .common import Tokens, Masks
 
 from transformers import AutoTokenizer
 from typing import List, Union
