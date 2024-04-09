@@ -12,7 +12,6 @@ from mlora.models.modeling_llama import (
 from mlora.backends import get_backend
 from mlora.utils import copy_parameters
 
-from transformers.activations import ACT2FN
 from collections import OrderedDict
 from typing import Tuple
 
