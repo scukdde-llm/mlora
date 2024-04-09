@@ -87,10 +87,10 @@ def main(base_model: str,
     else:
         model.load_adapter_weight("default")
 
-    generation_config: mlora.GenerateConfig = model.get_generate_paramas()[
-        "default"]
-
-    generation_config.prompt_template = template
+    generation_config = mlora.GenerateConfig(
+        adapter_name="default",
+        prompt_template=template,
+    )
 
     def evaluate(
         instruction,
