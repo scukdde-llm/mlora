@@ -6,6 +6,7 @@ from mlora.models.modeling_llama import (
     LlamaDecoderLayer,
     LlamaRMSNorm,
     LlamaEmbedding,
+    LlamaForCausalLM,
 )
 from mlora.common import (
     _flash_attn_available,
@@ -13,7 +14,6 @@ from mlora.common import (
     get_unpad_data,
     repeat_kv,
     FeedForward,
-    LLMForCausalLM,
     MultiLoraBatchData,
 )
 from mlora.backends import _backend, get_backend
@@ -247,7 +247,7 @@ MISTRAL_ATTENTION_CLASSES = {
 }
 
 
-class MistralForCausalLM(LLMForCausalLM):
+class MistralForCausalLM(LlamaForCausalLM):
     def __init__(self, config: LlamaConfig) -> None:
         super().__init__(config)
 

@@ -468,7 +468,11 @@ class LlamaForCausalLM(LLMForCausalLM):
                     additional_mask: List[Masks] = None,
                     multi_head: bool = False,
                     diagonal: int = 1) -> torch.Tensor:
-        assert not multi_head and self.config_.attn_implementation_ != "xformers"
+        if multi_head:
+            assert self.config_.attn_implementation_ == "xformers"
+        else:
+            assert self.config_.attn_implementation_ != "xformers"
+
         return prepare_4d_causal_attention_mask(input_tokens=input_tokens,
                                                 n_heads=self.config_.n_heads_ if multi_head else 1,
                                                 additional_mask=additional_mask, diagonal=diagonal,
