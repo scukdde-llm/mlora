@@ -9,7 +9,7 @@ jobs:
       image: mikecovlee/mlora:0.2.1.dev1
       volumes:
         - /home/lab/models:/host_models/
-      options: --gpus '"device=1,"'
+      options: --gpus "device=1"
     steps:
       - uses: actions/checkout@v3
       - name: finetune lora
@@ -26,7 +26,7 @@ jobs:
       image: mikecovlee/mlora:0.2.1.dev1
       volumes:
         - /home/lab/models:/host_models/
-      options: --gpus '"device=1,"'
+      options: --gpus "device=1"
     steps:
       - uses: actions/checkout@v3
       - name: finetune lora
@@ -43,7 +43,7 @@ jobs:
       image: mikecovlee/mlora:0.2.1.dev1
       volumes:
         - /home/lab/models:/host_models/
-      options: --gpus '"device=1,"'
+      options: --gpus "device=1"
     steps:
       - uses: actions/checkout@v3
       - name: finetune lora
