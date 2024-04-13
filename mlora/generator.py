@@ -1,10 +1,10 @@
-from mlora.modelargs import LoraBatchDataConfig, MultiLoraBatchData
-from mlora.tokenizer import Tokenizer, Tokens
+from mlora.common import Tokens, LoraBatchDataConfig, MultiLoraBatchData
+from mlora.tokenizer import Tokenizer
 from mlora.prompter import Prompter
 from mlora.model import LLMModel
 
-from typing import List, Union, Tuple
 from dataclasses import dataclass
+from typing import List, Tuple, Union
 import logging
 import torch
 
@@ -156,7 +156,7 @@ def generate(model: LLMModel,
     config_dict = {}
     for config in configs:
         config_dict[config.adapter_name] = config
-        tokens = [tokenizer.encode(prompt, True, False)
+        tokens = [tokenizer.encode(prompt)
                   for prompt in config.get_prompts()]
         config.batch_start_idx_ = len(raw_prompts)
         config.batch_end_idx_ = config.batch_start_idx_ + len(tokens)
@@ -167,8 +167,8 @@ def generate(model: LLMModel,
     batch_size = len(raw_prompts)
     min_tokens_len = min(len(t) for t in raw_prompts)
     max_tokens_len = max(len(t) for t in raw_prompts)
-    assert max_tokens_len <= model.max_seq_len_
-    total_len = min(model.max_seq_len_, max_gen_len + max_tokens_len)
+    assert max_tokens_len <= model.config_.max_seq_len_
+    total_len = min(model.config_.max_seq_len_, max_gen_len + max_tokens_len)
 
     tokens = torch.full((batch_size, total_len),
                         tokenizer.pad_id_, dtype=torch.int64, device=device)

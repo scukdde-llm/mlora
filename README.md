@@ -27,17 +27,23 @@ Please note that the functions, interfaces, and performance of this fork are sli
 | Linux   | CUDA    | FP32, FP16, TF32, BF16 | 8bit and 4bit | &check;  | &check;         |
 | Windows | CUDA    | FP32, FP16, TF32, BF16 | &cross;       | &cross;  | &cross;         |
 | macOS   | MPS     | FP32, FP16             | &cross;       | &cross;  | &cross;         |
+| All     | CPU     | FP32, FP16, BF16       | &cross;       | &cross;  | &cross;         |
+
+You can use the `MLORA_BACKEND_TYPE` environment variable to force m-LoRA to use a specific backend. For example, if you want m-LoRA to run only on CPU, you can set `MLORA_BACKEND_TYPE=CPU` before importing `mlora`.
 
 **Note**: Windows and macOS support are experimental feature.
 
 ## Supported Pre-trained Models
 
-|         | Model                                                    | # Parameters    |
-|---------|----------------------------------------------------------|-----------------|
-| &check; | [LLaMA](https://github.com/facebookresearch/llama)       | 7B/13B/33B/65B  |
-| &check; | [LLaMA-2](https://huggingface.co/meta-llama)             | 7B/13B/70B      |
-| &check; | [Qwen-2](https://qwenlm.github.io)                       | 4B/7B/14B/72B   |
-| &check; | [Mistral](https://mistral.ai)                            | 7B              |
+|         | Model                                                    | # Parameters       |
+|---------|----------------------------------------------------------|--------------------|
+| &check; | [LLaMA](https://github.com/facebookresearch/llama)       | 7B/13B/33B/65B     |
+| &check; | [LLaMA-2](https://huggingface.co/meta-llama)             | 7B/13B/70B         |
+| &check; | [Qwen-2](https://qwenlm.github.io)                       | 1.8B/4B/7B/14B/72B |
+| &check; | [Mistral](https://mistral.ai)                            | 7B                 |
+| &check; | [Gemma](https://ai.google.dev/gemma/docs)                | 2B/7B              |
+| &check; | [Phi-2](https://huggingface.co/microsoft/phi-2)          | 2.7B               |
+
 
 ## Supported LoRA Variants
 
@@ -106,8 +112,8 @@ For users with NVIDIA Ampere or newer GPU architectures, the `--tf32` option can
 
 ## Known issues
 
- + DoRA with Quantization on Qwen2
- + Half Precision with Qwen2
+ + Applying quantization to Qwen2 in DoRA will result in an error
+ + Employing half precision models on MPS may occasionally result in challenges, such as encountering 'nan' values or experiencing convergence difficulties.
 
 ## Installation
 
@@ -115,16 +121,21 @@ Please refer to [Install Guide](./docs/Install.md).
 
 ## Quickstart
 
-You can use m-LoRA via `launch.py` conveniently:
+You can conveniently utilize m-LoRA via `launch.py`. The following example demonstrates a streamlined approach to training a dummy model with m-LoRA.
 
 ```bash
 # Generating configuration
-python launch.py gen --template lora --tasks yahma/alpaca-cleaned
+python launch.py gen --template lora_phi --tasks ./data/dummy_data.json
 # Running the training task
-python launch.py run --base_model yahma/llama-7b-hf
+python launch.py run --base_model microsoft/phi-2
+# Try with gradio web ui
+python inference.py \
+  --base_model microsoft/phi-2 \
+  --template ./template/alpaca.json \
+  --lora_weights ./casual_0
 ```
 
-For further detailed usage information, please use the `help` command:
+For further detailed usage information, please refer to the `help` command:
 
 ```bash
 python launch.py help
@@ -136,9 +147,9 @@ The `mlora.py` code is a starting point for finetuning on various datasets.
 Basic command for finetuning a baseline model on the [Alpaca Cleaned](https://github.com/gururise/AlpacaDataCleaned) dataset:
 ```bash
 python mlora.py \
-  --base_model yahma/llama-7b-hf \
+  --base_model meta-llama/Llama-2-7b-hf \
   --config ./config/alpaca.json \
-  --load_16bit
+  --bf16
 ```
 
 You can check the template finetune configuration in [template](./template/) folder.

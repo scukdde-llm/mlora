@@ -1,7 +1,6 @@
-from mlora.tasks.common import BasicMetric, AutoMetric
-from mlora.tasks.common import CommonSenseTask
-from mlora.modelargs import DataClass
+from .common import BasicMetric, AutoMetric, CommonSenseTask
 from mlora.tokenizer import Tokenizer
+from mlora.common import DataClass
 from typing import List
 
 import datasets as hf_datasets
@@ -48,7 +47,7 @@ class ARC(QuestionAnswerTask):
                 labels = None
             else:
                 labels = [self.labels2id_[data_point["answerKey"]]]
-            tokens = tokenizer.encode(data=prompt, bos=True, eos=False)
+            tokens = tokenizer.encode(data=prompt)
             ret.append(DataClass(tokens_=tokens, labels_=labels))
             if idx % 10000 == 0:
                 logging.info(f"Encode text data: {idx}/{len(data)}")
@@ -76,7 +75,7 @@ class Boolq(QuestionAnswerTask):
                 labels = None
             else:
                 labels = [self.labels2id_[answer]]
-            tokens = tokenizer.encode(data=prompt, bos=True, eos=False)
+            tokens = tokenizer.encode(data=prompt)
             ret.append(DataClass(tokens_=tokens, labels_=labels))
             if idx % 10000 == 0:
                 logging.info(f"Encode text data: {idx}/{len(data)}")
@@ -107,7 +106,7 @@ class OpenBookQA(QuestionAnswerTask):
                 labels = None
             else:
                 labels = [self.labels2id_[data_point["answerKey"]]]
-            tokens = tokenizer.encode(data=prompt, bos=True, eos=False)
+            tokens = tokenizer.encode(data=prompt)
             ret.append(DataClass(tokens_=tokens, labels_=labels))
             if idx % 10000 == 0:
                 logging.info(f"Encode text data: {idx}/{len(data)}")
@@ -137,7 +136,7 @@ class PIQA(QuestionAnswerTask):
                 labels = None
             else:
                 labels = [data_point["label"]]
-            tokens = tokenizer.encode(data=prompt, bos=True, eos=False)
+            tokens = tokenizer.encode(data=prompt)
             ret.append(DataClass(tokens_=tokens, labels_=labels))
             if idx % 10000 == 0:
                 logging.info(f"Encode text data: {idx}/{len(data)}")

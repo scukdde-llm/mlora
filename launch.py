@@ -18,7 +18,7 @@ def compose_command(base_model: str,
                     attn_impl: str = None,
                     quantize: str = None,
                     dtype: str = "bf16",
-                    tf32: bool = True):
+                    tf32: bool = False):
     assert quantize in (None, "4bit", "8bit")
     assert dtype in ("fp32", "fp16", "bf16")
     command = "python mlora.py"
@@ -41,6 +41,10 @@ def compose_command(base_model: str,
     if tf32:
         command += " --tf32"
     return command
+
+
+def inference(**kwargs):
+    os.system(compose_command(**kwargs) + " --inference")
 
 
 def evaluate(**kwargs):
@@ -115,7 +119,8 @@ def gen_config(
     for lora_template in lora_templates:
         for task_name in tasks:
             lora_config = lora_template.copy()
-            casual_task = (not multi_task and task_name not in mlora.task_dict)
+            casual_task = (
+                not multi_task and task_name not in mlora.tasks.task_dict)
             if casual_task:
                 lora_config["name"] = f"casual_{index}"
                 lora_config["task_name"] = "casual"
@@ -151,7 +156,7 @@ def gen_config(
 def avail_tasks():
     import mlora
     print("Available task names:")
-    for name in mlora.task_dict.keys():
+    for name in mlora.tasks.task_dict.keys():
         print(f"    {name}")
     print("These tasks can be trained and evaluated automatically using m-LoRA.")
 
@@ -162,6 +167,7 @@ def show_help():
     print("Command:")
     print("    gen         generate a configuration from template")
     print("    run         Automatically training and evaluate")
+    print("    inference   Run inference on existed adapter")
     print("    evaluate    Run evaluation on existed adapter")
     print("    train       Run training with configuration")
     print("    avail       List all available tasks")
@@ -185,7 +191,7 @@ def show_help():
     print("    --use_rslora")
     print("    --group_by_length")
     print("")
-    print("Arguments of run, train and evaluate:")
+    print("Arguments of run, train, inference and evaluate:")
     print("    --base_model   model name or path")
     print("    --config       [mlora.json]")
     print("    --load_adapter [false]")
@@ -196,11 +202,12 @@ def show_help():
     print("    --attn_impl    [eager]")
     print("    --quantize     [none], 4bit, 8bit")
     print("    --dtype        [bf16], fp16, fp32")
-    print("    --tf32         [true]")
+    print("    --tf32         [false]")
     print("")
 
 
 command_map = {
+    "inference": inference,
     "evaluate": evaluate,
     "train": train,
     "run": run,
