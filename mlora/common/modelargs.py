@@ -254,7 +254,8 @@ class MixConfig(LoraConfig):
             config["expert_lora"] = expert_config
         config["routing_strategy"] = self.routing_strategy_
         config["num_experts"] = self.num_experts_
-        config["act_fn"] = self.act_fn_
+        if self.act_fn_ is not None:
+            config["act_fn"] = self.act_fn_
         if self.routing_strategy_ == "mixtral":
             config["top_k"] = self.top_k_
         elif self.routing_strategy_ == "switch":
