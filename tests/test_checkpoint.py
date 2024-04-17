@@ -5,7 +5,7 @@ Test cases for the Checkpoint module.
 import unittest
 from unittest.mock import patch, Mock
 import torch
-from mlora.checkpoint import (
+from mlora.common.checkpoint import (
     CheckpointOffloadFunction,
     CheckpointRecomputeFunction,
     check_backward_validity,
