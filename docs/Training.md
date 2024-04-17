@@ -76,7 +76,7 @@ You can choose to run `mlora.py` and pass parameters to execute the training.
 python mlora.py \
     --base_model yourmodelpath \
     --config yourloraconfig \
-    --load_16bit
+    --bf16
 ```
 You can use `--help` to query more command-line parameters about the `mlora.py` file.
 ```
