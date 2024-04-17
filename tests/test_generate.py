@@ -5,7 +5,7 @@ Test cases for the Generate module.
 import unittest
 from unittest.mock import patch, Mock
 import torch
-from mlora.generate import GenerateConfig, gen_outputs, logits_process
+from mlora.generator import GenerateConfig, gen_outputs, logits_process
 
 
 class TestGenerate(unittest.TestCase):
