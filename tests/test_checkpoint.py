@@ -29,7 +29,7 @@ class TestCheckpointOffloadFunction(unittest.TestCase):
         detached_inputs = detach_variable(inputs)
         self.assertTrue(all(inp.requires_grad is True for inp in detached_inputs))
 
-    @patch('mlora.checkpoint.CheckpointOffloadFunction')
+    @patch('mlora.common.checkpoint.CheckpointOffloadFunction')
     def test_checkpoint_offload(self, mock_checkpoint_offload_function):
         """
         Test CheckpointOffloadFunction class.
@@ -70,7 +70,7 @@ class TestCheckpointRecomputeFunction(unittest.TestCase):
         self.assertEqual(len(states), 1)
         self.assertTrue(torch.cuda.is_available())
 
-    @patch('mlora.checkpoint.CheckpointRecomputeFunction.apply')
+    @patch('mlora.common.checkpoint.CheckpointRecomputeFunction.apply')
     def test_checkpoint_recompute(self, mock_checkpoint_recompute_function):
         """
         Test CheckpointRecomputeFunction class.
