@@ -13,10 +13,6 @@
     - or you can downloaded the pre-trained LLM locally.
 - clean training dataset.
 
-
-
-
-
 **If you have already selected a pre-trained model supported by this project and have your own training set, you can proceed with the training using the following steps:**
 ## Prepare the Config
 
@@ -65,7 +61,6 @@ boolq
 obqa
 piqa
 ```
-
 
 ## Train
 **When you have selected the pre-trained model for fine-tuning, training dataset, and the configuration file, we provide you with two different ways to start training.**
