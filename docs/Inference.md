@@ -45,7 +45,7 @@ The `inference.py` file explains the inference process for the m-LoRA (Multi-LoR
 
 ## Principles:
 
-- Utilize the MLoRA (Multi-LoRA) model for inference, which is based on the Transformer architecture and incorporates LoRA adapters to support flexible fine-tuning and adaptive tasks.
+- Utilize the m-LoRA (Multi-LoRA) model for inference, which is based on the Transformer architecture and incorporates LoRA adapters to support flexible fine-tuning and adaptive tasks.
 - During the inference process, generate text snippets to be predicted based on user instructions and inputs, and employ the pre-trained language model to generate the predicted text.
 - Gradio provides an interactive interface, allowing users to intuitively input instructions and parameters and view real-time predictions from the model, facilitating user interaction with the model.
 
