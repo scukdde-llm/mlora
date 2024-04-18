@@ -26,7 +26,7 @@ The `inference.py` file explains the inference process for the MLoRA (Multi-LoRA
 
 2. **Model Inference**:
    - Generate a text snippet to be predicted based on the instruction and input provided by the user.
-   - Perform inference using the `mlora.generate` method to generate the predicted text.
+   - Perform inference using the `mlora.generator` method to generate the predicted text.
 
 3. **Gradio Interface**:
    - Create an interactive interface using the Gradio library, consisting of text boxes, sliders, and checkboxes for users to input instructions, parameters, and other options.
