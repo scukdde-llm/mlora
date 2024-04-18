@@ -6,7 +6,7 @@ After the fine-tuning is complete, you can use the following command to quickly 
 ```
 
 ## Introduction
-The `inference.py` file explains the inference process for the MLoRA (Multi-LoRA) model and provides an interactive interface using Gradio, enabling users to interact with the model. Below are the key steps, parameters, and principles outlined in the file:
+The `inference.py` file explains the inference process for the m-LoRA (Multi-LoRA) model and provides an interactive interface using Gradio, enabling users to interact with the model. Below are the key steps, parameters, and principles outlined in the file:
 
 ## Steps:
 
