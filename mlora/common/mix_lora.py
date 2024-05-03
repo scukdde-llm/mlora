@@ -47,8 +47,9 @@ class MixtralSparseMoe(torch.nn.Module):
         self.gate_ = torch.nn.Linear(
             args.dim_, config.num_experts_, bias=False, device=config.device, dtype=self.dtype_)
         self.act_ = ACT2FN[args.hidden_act_ if config.act_fn_ is None else config.act_fn_]
-        self.experts_ = config.num_experts_
-        self.topk_ = config.top_k_
+        self.experts_: int = config.num_experts_
+        self.topk_: int = config.top_k_
+        self.jitter_noise_: float = config.jitter_noise_
         self.router_profile_: bool = False
         self.profiler_: List[int] = None
 
@@ -77,6 +78,12 @@ class MixtralSparseMoe(torch.nn.Module):
 
     def forward(self, expert_fn, hidden_states: torch.Tensor) -> Tuple:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
+
+        if self.jitter_noise_ > 0:
+            # Multiply the token inputs by the uniform distribution - adding some noise
+            hidden_states *= torch.empty_like(hidden_states).uniform_(
+                1.0 - self.jitter_noise_, 1.0 + self.jitter_noise_)
+
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.view(-1, hidden_dim).to(self.dtype_)
         # router_logits: (batch * sequence_length, n_experts)
@@ -103,20 +110,13 @@ class MixtralSparseMoe(torch.nn.Module):
         for expert_idx in range(self.experts_):
             idx, top_x = torch.where(expert_mask[expert_idx])
 
-            if top_x.shape[0] == 0:
-                continue
-
-            # in torch it is faster to index using lists than torch tensors
-            top_x_list = top_x.tolist()
-            idx_list = idx.tolist()
-
             # Index the correct hidden states and compute the expert hidden state for
             # the current expert. We need to make sure to multiply the output hidden
             # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
             current_state = hidden_states[None,
-                                          top_x_list].reshape(-1, hidden_dim).to(input_dtype)
+                                          top_x].reshape(-1, hidden_dim).to(input_dtype)
             current_hidden_states = expert_fn(
-                self.adapter_name_, self.act_, expert_idx, current_state) * routing_weights[top_x_list, idx_list, None]
+                self.adapter_name_, self.act_, expert_idx, current_state) * routing_weights[top_x, idx, None]
 
             # However `index_add_` only support torch tensors for indexing so we'll use
             # the `top_x` tensor here.
