@@ -21,7 +21,6 @@ from typing import Tuple, List, Dict, Optional
 
 import logging
 import torch
-import numpy
 import json
 import math
 import os
@@ -240,18 +239,21 @@ class LLMModel(torch.nn.Module):
                 multi_head=(self.config_.attn_implementation_ == "xformers"),
                 diagonal=input.inference_seq_pos_ + 1 if input.inference_mode_ else 1)
 
-        # routing data
-        router_logits = numpy.zeros(
-            (len(input.lora_batch_data_config_), self.model_.config_.n_layers_)).tolist()
-
         if input.inference_mode_:
             input.gradient_checkpoint_ = False
 
-        data = (tokens, input, mask,
-                router_logits, input.gradient_checkpoint_)
+        data = (tokens, input, mask, input.gradient_checkpoint_)
 
         for seq_layer in self.seq_module_:
             data = seq_layer.forward(data)
+
+        # collecting router logits
+        router_logits = [[] for _ in range(len(input.lora_batch_data_config_))]
+        for seq_layer in self.seq_module_:
+            if not hasattr(seq_layer, "router_probs_") or seq_layer.router_probs_ is None:
+                continue
+            for idx in range(len(input.lora_batch_data_config_)):
+                router_logits[idx].append(seq_layer.router_probs_[idx])
 
         output = data[0]
         assert isinstance(output, List)

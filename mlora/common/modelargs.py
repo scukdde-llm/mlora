@@ -75,6 +75,7 @@ class MultiLoraBatchData:
     batch_tokens_: List[Tokens] = None
     attention_masks_: List[Tokens] = None
 
+    output_router_logits_: bool = True
     gradient_checkpoint_: bool = True
     inference_seq_pos_: int = -1
 
