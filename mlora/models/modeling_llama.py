@@ -422,7 +422,7 @@ class LlamaSequentialWrapper(nn.Module):
             return (output, ) + input[1:]
         elif module_name == "LlamaDecoderLayer":
             if input[-1]:
-                output = CheckpointFunction.apply(
+                output = CheckpointFunction(
                     self.wrapper_module_.forward, *input[:-1])
             else:
                 output = self.wrapper_module_.forward(*input[:-1])
@@ -530,7 +530,7 @@ class LlamaForCausalLM(LLMForCausalLM):
                 layer.mlp.down_proj,
                 layer.mlp.up_proj,
                 llm_args,
-            ))
+            ), idx)
             decoder.input_layernorm_ = LlamaRMSNorm(
                 layer.input_layernorm.weight, llm_args.rms_norm_eps_)
             decoder.post_attention_layernorm_ = LlamaRMSNorm(

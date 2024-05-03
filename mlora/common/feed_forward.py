@@ -8,9 +8,10 @@ import torch
 
 
 class FeedForward(torch.nn.Module):
-    def __init__(self, mlp: LLMFeedForward) -> None:
+    def __init__(self, mlp: LLMFeedForward, layer_idx: int) -> None:
         super().__init__()
         self.mlp_: LLMFeedForward = mlp
+        self.layer_id_ = layer_idx
         # mix of experts
         self.moes_: torch.ModuleDict = {}
 
@@ -53,7 +54,7 @@ class FeedForward(torch.nn.Module):
                     moe_name].forward(self._expert_forward_callback, data[start_idx:end_idx])
 
                 if router_logits is not None and current_router_outputs is not None:
-                    router_logits[idx].append(current_router_outputs)
+                    router_logits[idx][self.layer_id_] = current_router_outputs
             else:
                 current_hidden_states = self.mlp_._lora_forward(
                     moe_name, self.act_, data[start_idx:end_idx])

@@ -464,7 +464,7 @@ class PhiSequentialWrapper(nn.Module):
             return (output, ) + input[1:]
         elif module_name == "PhiDecoderLayer":
             if input[-1]:
-                output = CheckpointFunction.apply(
+                output = CheckpointFunction(
                     self.wrapper_module_.forward, *input[:-1])
             else:
                 output = self.wrapper_module_.forward(*input[:-1])
@@ -575,7 +575,7 @@ class PhiForCausalLM(LLMForCausalLM):
                     layer.mlp.fc1,
                     layer.mlp.fc2,
                     llm_args,
-                )),
+                ), idx),
                 llm_args,
             )
             copy_parameters(layer.input_layernorm, decoder.input_layernorm_)

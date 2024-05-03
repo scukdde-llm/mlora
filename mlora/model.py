@@ -21,6 +21,7 @@ from typing import Tuple, List, Dict, Optional
 
 import logging
 import torch
+import numpy
 import json
 import math
 import os
@@ -240,8 +241,8 @@ class LLMModel(torch.nn.Module):
                 diagonal=input.inference_seq_pos_ + 1 if input.inference_mode_ else 1)
 
         # routing data
-        router_logits: List[List] = list(
-            [] for _ in range(len(input.lora_batch_data_config_)))
+        router_logits = numpy.zeros(
+            (len(input.lora_batch_data_config_), self.model_.config_.n_layers_)).tolist()
 
         if input.inference_mode_:
             input.gradient_checkpoint_ = False
