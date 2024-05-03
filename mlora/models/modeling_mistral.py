@@ -312,7 +312,7 @@ class MistralForCausalLM(LlamaForCausalLM):
                 layer.mlp.down_proj,
                 layer.mlp.up_proj,
                 llm_args,
-            ))
+            ), idx)
             decoder.input_layernorm_ = LlamaRMSNorm(
                 layer.input_layernorm.weight, llm_args.rms_norm_eps_)
             decoder.post_attention_layernorm_ = LlamaRMSNorm(
