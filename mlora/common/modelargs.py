@@ -73,15 +73,15 @@ class MultiLoraBatchData:
     lora_batch_data_config_: List[LoraBatchDataConfig] = None
 
     batch_tokens_: List[Tokens] = None
-    attention_masks_: List[Tokens] = None
+    batch_labels_: List[Labels] = None
+    attention_masks_: List[Masks] = None
 
     output_router_logits_: bool = True
-    gradient_checkpoint_: bool = True
-    inference_seq_pos_: int = -1
 
-    @property
-    def inference_mode_(self) -> bool:
-        return self.inference_seq_pos_ >= 0
+    gradient_checkpoint_: str = "none"
+    efficient_operator_: bool = True
+    inference_mode_: bool = False
+    diagonal_pos_: int = 1
 
 
 @dataclass

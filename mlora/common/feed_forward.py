@@ -38,14 +38,14 @@ class FeedForward(torch.nn.Module):
         return self.mlp_._lora_forward(lora_name, act_fn, data)
 
     def _mixlora_forward(self, data: torch.Tensor, input_args: MultiLoraBatchData):
-        batch_size, sequence_length, hidden_dim = data.shape
+        final_hidden_states = torch.zeros_like(data)
+
         if input_args.output_router_logits_:
             router_logits = [None for _ in range(
                 len(input_args.lora_batch_data_config_))]
         else:
             router_logits = None
-        final_hidden_states = torch.zeros(
-            (batch_size, sequence_length, hidden_dim), dtype=data.dtype, device=data.device)
+
         for idx, lora_config in enumerate(input_args.lora_batch_data_config_):
             moe_name = lora_config.adapter_name_
             start_idx = lora_config.batch_start_idx_
@@ -61,7 +61,7 @@ class FeedForward(torch.nn.Module):
                 current_hidden_states = self.mlp_._lora_forward(
                     moe_name, self.act_, data[start_idx:end_idx])
 
-            final_hidden_states.index_add_(0, get_range_tensor(data.device, batch_size)[
+            final_hidden_states.index_add_(0, get_range_tensor(data.device, data.shape[0])[
                                            start_idx:end_idx], current_hidden_states)
 
         return final_hidden_states, router_logits

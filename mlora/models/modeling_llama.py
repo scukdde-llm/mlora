@@ -12,7 +12,7 @@ from mlora.common import (
     Linear,
     FeedForward,
     MultiLoraBatchData,
-    CheckpointRecomputeFunction as CheckpointFunction,
+    CHECKPOINT_CLASSES,
     LLMModelArgs,
     LLMAttention,
     LLMFeedForward,
@@ -366,8 +366,9 @@ class LlamaDecoderLayer(LLMDecoder):
 
     def forward(self,
                 hidden_states: torch.Tensor,
-                input_args: MultiLoraBatchData,
-                attention_mask: Optional[torch.Tensor] = None):
+                attention_mask: torch.Tensor,
+                input_args: MultiLoraBatchData):
+
         residual = hidden_states
         hidden_states = self.input_layernorm_(hidden_states)
         # Self Attention
@@ -381,7 +382,7 @@ class LlamaDecoderLayer(LLMDecoder):
             hidden_states, input_args)
         hidden_states = residual + hidden_states
 
-        return hidden_states, router_logits
+        return hidden_states, *router_logits
 
 
 class LlamaEmbedding(nn.Module):
@@ -400,7 +401,6 @@ class LlamaSequentialWrapper(nn.Module):
     def __init__(self, module: nn.Module):
         super().__init__()
         self.wrapper_module_ = module
-        self.router_probs_ = None
 
     def name(self) -> str:
         return type(self.wrapper_module_).__name__
@@ -410,21 +410,18 @@ class LlamaSequentialWrapper(nn.Module):
 
         if module_name == "LlamaEmbedding":
             output = self.wrapper_module_.forward(input[0])
-            if input[-1]:
+            if input[-1].gradient_checkpoint_ != "none":
                 output = output.requires_grad_(True)
-            return (output, ) + input[1:]
+            return (output,) + input[1:]
         elif module_name == "LlamaRMSNorm":
             output = self.wrapper_module_.forward(input[0])
-            return (output, ) + input[1:]
+            return (output,) + input[1:]
         elif module_name == "LlamaDecoderLayer":
-            if input[-1]:
-                output, router_probs = CheckpointFunction(
-                    self.wrapper_module_.forward, *input[:-1])
-            else:
-                output, router_probs = self.wrapper_module_.forward(
-                    *input[:-1])
-            self.router_probs_ = router_probs
-            return (output, ) + input[1:]
+            outputs = CHECKPOINT_CLASSES[input[-1].gradient_checkpoint_](
+                self.wrapper_module_.forward, *input)
+            if len(outputs) > 1:
+                self.router_probs_ = outputs[1:]
+            return (outputs[0],) + input[1:]
         else:
             raise f"module invalid: {module_name}"
 
