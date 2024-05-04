@@ -3,7 +3,7 @@ from .lora_linear import get_range_tensor, Linear
 from .mix_lora import moe_layer_factory
 from .model import LLMFeedForward
 
-from typing import Dict, List, Optional
+from typing import Tuple, Dict, List, Optional
 import torch
 
 
@@ -17,7 +17,7 @@ class FeedForward(torch.nn.Module):
     def state_dict(self) -> Dict[str, Linear]:
         return self.mlp_.state_dict()
 
-    def forward(self, data: torch.Tensor, input_args: MultiLoraBatchData) -> torch.Tensor:
+    def forward(self, data: torch.Tensor, input_args: MultiLoraBatchData) -> Tuple[torch.Tensor, List]:
         if len(self.moes_) == 0:
             return self.mlp_._batch_forward(data, input_args), []
         else:
