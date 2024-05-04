@@ -230,25 +230,27 @@ class LLMModel(torch.nn.Module):
                               dtype=torch.int64, device=self.device_)
 
         # prepare mask
-        if self.config_.attn_implementation_ == "flash_attn":
-            if input_args.attention_masks_ is not None and 0 in input_args.attention_masks_:
-                # 2d mask is passed through the layers
-                mask = torch.tensor(input_args.attention_masks_,
-                                    dtype=torch.int64, device=self.device_)
-            else:
-                mask = None
+        if input_args.attention_masks_ is not None and 0 in input_args.attention_masks_:
+            # 2d mask is passed through the layers
+            attn_mask = torch.tensor(input_args.attention_masks_,
+                                     dtype=torch.int64, device=self.device_)
         else:
-            mask = self.model_.causal_mask(
+            attn_mask = None
+
+        if self.config_.attn_implementation_ != "flash_attn":
+            causal_mask = self.model_.causal_mask(
                 input_tokens=tokens,
                 additional_mask=input_args.attention_masks_,
                 multi_head=(self.config_.attn_implementation_ == "xformers"),
                 diagonal=input_args.diagonal_pos_)
+        else:
+            causal_mask = attn_mask
 
         input_args.batch_labels_ = None
         input_args.batch_tokens_ = None
         input_args.attention_masks_ = None
 
-        data = (tokens, mask, input_args)
+        data = (tokens, causal_mask, input_args)
 
         for seq_layer in self.seq_module_:
             data = seq_layer.forward(data)
@@ -284,7 +286,7 @@ class LLMModel(torch.nn.Module):
             loss_fn = router_loss_factory(
                 self.adapter_configs_[output_data.adapter_name])
             if loss_fn is not None:
-                output_data.aux_loss = loss_fn(router_logits[idx])
+                output_data.aux_loss = loss_fn(router_logits[idx], attn_mask)
 
         return output
 
