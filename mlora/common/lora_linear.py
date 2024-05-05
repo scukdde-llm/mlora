@@ -352,10 +352,14 @@ class Linear(nn.Module):
     def _compatible_impl(self, hidden_states: torch.Tensor, input_args: MultiLoraBatchData) -> torch.Tensor:
         # hidden_states shape is: batch_size * max_seq_len * dim
         # result = hidden_states @ self.weight_.transpose(0, 1)
-        result = self.base_layer_.forward(hidden_states)
+        residual = self.base_layer_.forward(hidden_states)
 
         if len(self.loras_) == 0:
-            return result
+            return residual
+
+        next_states = torch.zeros_like(residual)
+        lora_range = get_range_tensor(
+            hidden_states.device, hidden_states.shape[0])
 
         for lora_config in input_args.lora_batch_data_config_:
             adapter_name = lora_config.adapter_name_
@@ -365,10 +369,11 @@ class Linear(nn.Module):
             if adapter_name == "" or adapter_name not in self.loras_:
                 continue
 
-            result[start_idx: end_idx] = self.loras_[adapter_name].forward(
-                result[start_idx: end_idx], hidden_states[start_idx:end_idx])
+            lora_data = self.loras_[adapter_name].forward(
+                residual[start_idx: end_idx], hidden_states[start_idx:end_idx])
+            next_states.index_add_(0, lora_range[start_idx:end_idx], lora_data)
 
-        return result
+        return next_states
 
     def forward(self, hidden_states: torch.Tensor, input_args: MultiLoraBatchData) -> torch.Tensor:
         if input_args.efficient_operator_:
