@@ -161,11 +161,42 @@ class HellaSwag(QuestionAnswerTask):
             for label, text in enumerate(data_point["endings"]):
                 prompt += f" ({self.labels_[label]}) {text}"
             prompt += "\nAnswer:"
+            label = int(data_point["label"])
             if is_train:
-                prompt += " " + self.labels_[int(data_point["label"])]
+                prompt += f" {self.labels_[label]}"
                 labels = None
             else:
-                labels = [int(data_point["label"])]
+                labels = [label]
+            tokens = tokenizer.encode(data=prompt)
+            ret.append(DataClass(tokens_=tokens, labels_=labels))
+            if idx % 10000 == 0:
+                logging.info(f"Encode text data: {idx}/{len(data)}")
+
+        return ret
+
+
+class WinoGrande(QuestionAnswerTask):
+    def __init__(self) -> None:
+        super().__init__(["A", "B"])
+
+    def loading_data(self,
+                     tokenizer: Tokenizer,
+                     is_train: bool = True) -> List[DataClass]:
+        data = hf_datasets.load_dataset(
+            "winogrande", "winogrande_debiased")["train" if is_train else "validation"]
+        logging.info("Preparing data for WinoGrande")
+        ret: List[DataClass] = []
+        for idx, data_point in enumerate(data):
+            prompt = "Please choose the correct answer to fill in the blank to complete the given sentence: " + \
+                data_point["sentence"]
+            prompt += f"\n(A) {data_point['option1']}\n(B) {data_point['option2']}"
+            prompt += "\nAnswer:"
+            label = int(data_point["answer"]) - 1
+            if is_train:
+                prompt += f" {self.labels_[label]}"
+                labels = None
+            else:
+                labels = [label]
             tokens = tokenizer.encode(data=prompt)
             ret.append(DataClass(tokens_=tokens, labels_=labels))
             if idx % 10000 == 0:
@@ -181,5 +212,6 @@ def update_task_dict(task_dict):
         "boolq": Boolq(),
         "obqa": OpenBookQA(),
         "piqa": PIQA(),
-        "hellas": HellaSwag(),
+        "hellaswag": HellaSwag(),
+        "winogrande": WinoGrande(),
     })
