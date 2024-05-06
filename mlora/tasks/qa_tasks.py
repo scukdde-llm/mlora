@@ -153,7 +153,7 @@ class SIQA(QuestionAnswerTask):
                      is_train: bool = True) -> List[DataClass]:
         data = hf_datasets.load_dataset(
             "social_i_qa")["train" if is_train else "validation"]
-        logging.info(f"Preparing data for SIQA")
+        logging.info("Preparing data for SIQA")
         ret: List[DataClass] = []
         for idx, data_point in enumerate(data):
             prompt = "Please choose the correct answer to the question.\n"
