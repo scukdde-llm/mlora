@@ -80,6 +80,7 @@ class MultiLoraBatchData:
 
     gradient_checkpoint_: str = "none"
     efficient_operator_: bool = True
+    efficient_mixlora_: bool = True
     inference_mode_: bool = False
     diagonal_pos_: int = 1
 

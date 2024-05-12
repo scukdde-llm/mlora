@@ -20,7 +20,7 @@ from mlora.common import (
     LLMForCausalLM,
 )
 from mlora.backends import _backend, get_backend
-from mlora.utils import copy_parameters
+from mlora.utils import copy_parameters, slice_tensor
 
 from typing import Tuple, Dict, List, Optional
 from transformers.activations import ACT2FN
@@ -292,13 +292,6 @@ LLAMA_ATTENTION_CLASSES = {
 }
 
 
-def _mixlora_slice(data, top_x, input_dtype, last_value=None):
-    if last_value is None:
-        return data[None, top_x].reshape(-1, data.shape[-1]).to(input_dtype)
-    else:
-        return last_value
-
-
 class LlamaMLP(LLMFeedForward):
     def __init__(self, w1: nn.Module, w2: nn.Module, w3: nn.Module, args: LlamaConfig) -> None:
         super().__init__()
@@ -351,18 +344,18 @@ class LlamaMLP(LLMFeedForward):
 
             lora_name = f"moe.{moe_name}.experts.{expert_idx}"
             if lora_name in self.w1_.loras_:
-                lora_data = _mixlora_slice(hidden_states, top_x, input_dtype)
+                lora_data = slice_tensor(hidden_states, top_x, input_dtype)
                 w1 = self.w1_.loras_[lora_name].forward(
-                    _mixlora_slice(common_w1, top_x, input_dtype), lora_data)
+                    slice_tensor(common_w1, top_x, input_dtype), lora_data)
             else:
                 lora_data = None
-                w1 = _mixlora_slice(common_w1, top_x, input_dtype)
+                w1 = slice_tensor(common_w1, top_x, input_dtype)
 
             if lora_name in self.w3_.loras_:
-                w3 = self.w3_.loras_[lora_name].forward(_mixlora_slice(common_w3, top_x, input_dtype),
-                                                        _mixlora_slice(hidden_states, top_x, input_dtype, lora_data))
+                w3 = self.w3_.loras_[lora_name].forward(slice_tensor(common_w3, top_x, input_dtype),
+                                                        slice_tensor(hidden_states, top_x, input_dtype, lora_data))
             else:
-                w3 = _mixlora_slice(common_w3, top_x, input_dtype)
+                w3 = slice_tensor(common_w3, top_x, input_dtype)
 
             act_result = act_fn(w1) * w3
             if lora_name in self.w2_.loras_:
