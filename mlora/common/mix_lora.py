@@ -283,6 +283,31 @@ class SwitchSparseMoe(torch.nn.Module):
             config.ffn_dropout_) if config.ffn_dropout_ > 0 else torch.nn.Identity()
         self.expert_capacity_: int = config.expert_capacity_
         self.jitter_noise_: float = config.jitter_noise_
+        self.router_profile_: bool = False
+        self.profiler_: List[int] = None
+
+    def _profiling(self,
+                   batch_size: int,
+                   sequence_length: int,
+                   selected_experts: torch.Tensor) -> None:
+        if not self.router_profile_:
+            return
+
+        router_statistic_ = list(0 for _ in range(self.experts_))
+        for selected in selected_experts.tolist():
+            for idx in selected:
+                router_statistic_[idx] += 1
+
+        if self.profiler_ is None:
+            self.profiler_ = list(0 for _ in range(self.experts_))
+            for idx in range(self.experts_):
+                self.profiler_[idx] = (
+                    router_statistic_[idx] / batch_size) / sequence_length
+        else:
+            for idx in range(self.experts_):
+                pressure = (
+                    router_statistic_[idx] / batch_size) / sequence_length
+                self.profiler_[idx] = (self.profiler_[idx] + pressure) / 2
 
     def route(self, hidden_states: torch.Tensor) -> Tuple:
         if self.jitter_noise_ > 0:
@@ -309,11 +334,15 @@ class SwitchSparseMoe(torch.nn.Module):
         return expert_index, router_probs, router_logits
 
     def forward(self, mlp: LLMFeedForward, hidden_states: torch.Tensor) -> Tuple:
+        batch_size, sequence_length, _ = hidden_states.shape
+
         input_dtype = hidden_states.dtype
         hidden_states = hidden_states.to(self.dtype_)
 
         router_mask, router_probs, router_logits = self.route(hidden_states)
         expert_index = torch.argmax(router_mask, dim=-1)
+
+        self._profiling(batch_size, sequence_length, expert_index)
 
         next_states = hidden_states.clone()
         for expert_idx in range(self.experts_):

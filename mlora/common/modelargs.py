@@ -234,16 +234,17 @@ class MixConfig(LoraConfig):
         self.router_aux_loss_coef_ = config.get(
             "router_aux_loss_coef", 0.001)  # for training
         self.routing_strategy_ = config["routing_strategy"]
-        self.router_init_range_ = config.get("router_init_range", 0.02)
         self.router_loss_ = config.get("router_loss", True)
         self.num_experts_ = config["num_experts"]
         # silu for mixtral or gelu_new for switch transformers
         # left blank to automatically use the original act_fn of FFN
         self.act_fn_ = config.get("act_fn", None)
         if self.routing_strategy_ == "mixtral":
+            self.router_init_range_ = config.get("router_init_range", 0.02)
             self.jitter_noise_ = config.get("jitter_noise", 0.0)
             self.top_k_ = config.get("top_k", 2)
         elif self.routing_strategy_ == "switch":
+            self.router_init_range_ = config.get("router_init_range", 1.0)
             self.jitter_noise_ = config.get("jitter_noise", 0.01)
             self.router_z_loss_coef_ = config.get(
                 "router_z_loss_coef", 0.001)  # for training
