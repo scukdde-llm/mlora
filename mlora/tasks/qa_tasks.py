@@ -251,7 +251,7 @@ class MedicalQA(QuestionAnswerTask):
         for idx, data_point in enumerate(data):
             prompt = "Please provide your answer to the following question using" \
                 + " information from medical articles and your medical expertise.\n"
-            prompt += f"Information: {data_point['short_context']}\n"
+            prompt += f"Information: {data_point['short_context' if is_train else 'long_context']}\n"
             prompt += f"Question: {data_point['question']}\n"
             prompt += "Answer:"
             answer = data_point["raw_answer"]
