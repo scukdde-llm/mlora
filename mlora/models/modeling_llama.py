@@ -19,8 +19,9 @@ from mlora.common import (
     LLMDecoder,
     LLMForCausalLM,
 )
+from mlora.common.mix_lora import _mixtral_slice_tensor
 from mlora.backends import _backend, get_backend
-from mlora.utils import copy_parameters, slice_tensor
+from mlora.utils import copy_parameters
 
 from typing import Tuple, Dict, List, Optional
 from transformers.activations import ACT2FN
@@ -344,18 +345,19 @@ class LlamaMLP(LLMFeedForward):
 
             lora_name = f"moe.{moe_name}.experts.{expert_idx}"
             if lora_name in self.w1_.loras_:
-                lora_data = slice_tensor(hidden_states, top_x, input_dtype)
+                lora_data = _mixtral_slice_tensor(
+                    hidden_states, top_x, input_dtype)
                 w1 = self.w1_.loras_[lora_name].forward(
-                    slice_tensor(common_w1, top_x, input_dtype), lora_data)
+                    _mixtral_slice_tensor(common_w1, top_x, input_dtype), lora_data)
             else:
                 lora_data = None
-                w1 = slice_tensor(common_w1, top_x, input_dtype)
+                w1 = _mixtral_slice_tensor(common_w1, top_x, input_dtype)
 
             if lora_name in self.w3_.loras_:
-                w3 = self.w3_.loras_[lora_name].forward(slice_tensor(common_w3, top_x, input_dtype),
-                                                        slice_tensor(hidden_states, top_x, input_dtype, lora_data))
+                w3 = self.w3_.loras_[lora_name].forward(_mixtral_slice_tensor(common_w3, top_x, input_dtype),
+                                                        _mixtral_slice_tensor(hidden_states, top_x, input_dtype, lora_data))
             else:
-                w3 = slice_tensor(common_w3, top_x, input_dtype)
+                w3 = _mixtral_slice_tensor(common_w3, top_x, input_dtype)
 
             act_result = act_fn(w1) * w3
             if lora_name in self.w2_.loras_:

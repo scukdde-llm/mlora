@@ -11,15 +11,6 @@ def copy_parameters(source: torch.nn.Module, dest: torch.nn.Module):
     dest.requires_grad_(False)
 
 
-def slice_tensor(data: torch.Tensor, slice: torch.Tensor,
-                 dtype: torch.dtype = None, last_value: torch.Tensor = None):
-    if last_value is None:
-        last_value = data[None, slice].reshape(-1, data.shape[-1])
-    if dtype is not None:
-        last_value = last_value.to(dtype)
-    return last_value
-
-
 def setup_logging(log_level: str = "WARN", log_file: str = None):
     # set the logger
     log_handlers = [logging.StreamHandler()]
