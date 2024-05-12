@@ -56,7 +56,7 @@ class FeedForward(torch.nn.Module):
                     router_logits[idx] = current_router_outputs
             else:
                 current_hidden_states = self.mlp_._lora_forward(
-                    moe_name, self.act_, data[start_idx:end_idx])
+                    moe_name, self.mlp_.act_, data[start_idx:end_idx])
 
             final_hidden_states.index_add_(
                 0, lora_range[start_idx:end_idx], current_hidden_states)
