@@ -33,9 +33,11 @@ class FeedForward(torch.nn.Module):
             with torch.no_grad():
                 self.moes_[config.adapter_name].gate_.weight.copy_(gate)
 
-    def _expert_forward_callback(self, moe_name, act_fn, expert_idx, data):
-        lora_name = f"moe.{moe_name}.experts.{expert_idx}"
-        return self.mlp_._lora_forward(lora_name, act_fn, data)
+    def _expert_forward_callback(self, moe_name, act_fn, expert_mask, hidden_states, input_dtype):
+        if hasattr(self.mlp_, "_mixlora_forward"):
+            return self.mlp_._mixlora_forward(moe_name, act_fn, expert_mask, hidden_states, input_dtype)
+        else:
+            raise NotImplementedError()
 
     def _mixlora_forward(self, data: torch.Tensor, input_args: MultiLoraBatchData):
         final_hidden_states = torch.zeros_like(data)

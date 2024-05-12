@@ -162,17 +162,19 @@ class MixtralSparseMoe(torch.nn.Module):
         expert_mask = torch.nn.functional.one_hot(
             selected_experts, num_classes=self.experts_).permute(2, 1, 0)
 
-        # Loop over all available experts in the model and perform the computation on each expert
+        # Perform the computation on each expert
+        expert_states = expert_fn(
+            self.adapter_name_, self.act_, expert_mask, hidden_states, input_dtype)
+
+        # Unpack
         for expert_idx in range(self.experts_):
             idx, top_x = torch.where(expert_mask[expert_idx])
 
             # Index the correct hidden states and compute the expert hidden state for
             # the current expert. We need to make sure to multiply the output hidden
             # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
-            current_state = hidden_states[None,
-                                          top_x].reshape(-1, hidden_dim).to(input_dtype)
-            current_hidden_states = expert_fn(
-                self.adapter_name_, self.act_, expert_idx, current_state) * routing_weights[top_x, idx, None]
+            current_hidden_states = expert_states[expert_idx] * \
+                routing_weights[top_x, idx, None]
 
             # However `index_add_` only support torch tensors for indexing so we'll use
             # the `top_x` tensor here.

@@ -292,6 +292,13 @@ LLAMA_ATTENTION_CLASSES = {
 }
 
 
+def _mixlora_slice(data, top_x, input_dtype, last_value=None):
+    if last_value is None:
+        return data[None, top_x].reshape(-1, data.shape[-1]).to(input_dtype)
+    else:
+        return last_value
+
+
 class LlamaMLP(LLMFeedForward):
     def __init__(self, w1: nn.Module, w2: nn.Module, w3: nn.Module, args: LlamaConfig) -> None:
         super().__init__()
@@ -334,6 +341,38 @@ class LlamaMLP(LLMFeedForward):
                 self.w2_.base_layer_.forward(act_result), act_result)
         else:
             return self.w2_.base_layer_.forward(act_result)
+
+    def _mixlora_forward(self, moe_name, act_fn, expert_mask, hidden_states, input_dtype):
+        common_w1 = self.w1_.base_layer_.forward(hidden_states.to(input_dtype))
+        common_w3 = self.w3_.base_layer_.forward(hidden_states.to(input_dtype))
+        final_expert_states = []
+        for expert_idx in range(expert_mask.shape[0]):
+            _, top_x = torch.where(expert_mask[expert_idx])
+
+            lora_name = f"moe.{moe_name}.experts.{expert_idx}"
+            if lora_name in self.w1_.loras_:
+                lora_data = _mixlora_slice(hidden_states, top_x, input_dtype)
+                w1 = self.w1_.loras_[lora_name].forward(
+                    _mixlora_slice(common_w1, top_x, input_dtype), lora_data)
+            else:
+                lora_data = None
+                w1 = _mixlora_slice(common_w1, top_x, input_dtype)
+
+            if lora_name in self.w3_.loras_:
+                w3 = self.w3_.loras_[lora_name].forward(_mixlora_slice(common_w3, top_x, input_dtype),
+                                                        _mixlora_slice(hidden_states, top_x, input_dtype, lora_data))
+            else:
+                w3 = _mixlora_slice(common_w3, top_x, input_dtype)
+
+            act_result = act_fn(w1) * w3
+            if lora_name in self.w2_.loras_:
+                final_expert_states.append(self.w2_.loras_[lora_name].forward(
+                    self.w2_.base_layer_.forward(act_result), act_result))
+            else:
+                final_expert_states.append(
+                    self.w2_.base_layer_.forward(act_result))
+
+        return final_expert_states
 
 
 class LlamaRMSNorm(nn.Module):
